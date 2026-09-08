@@ -5,7 +5,7 @@ import android.os.Looper;
 import java.util.ArrayList;
 import java.util.List;
 
-/** User-friendly multi-sample local voice enrollment with basic audio quality checks. */
+/** User-friendly multi-sample local voice enrollment with tolerant quality checks. */
 public final class IMOVoiceEnrollment {
     public interface Callback {
         void onProgress(String message);
@@ -13,8 +13,9 @@ public final class IMOVoiceEnrollment {
     }
 
     private static final int MIN_SAMPLES = 3;
-    private static final long TTS_GUARD_MS = 1200L;
-    private static final double MIN_RMS = 0.008;
+    private static final int MAX_ATTEMPTS_PER_SAMPLE = 3;
+    private static final long TTS_GUARD_MS = 2200L;
+    private static final double MIN_RMS = 0.004;
     private final IMOSpeakerEncoder encoder;
     private final IMOVoiceIdentity identity;
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -38,19 +39,28 @@ public final class IMOVoiceEnrollment {
                 List<float[]> embeddings = new ArrayList<>();
                 for (int i = 0; i < sampleCount; i++) {
                     int number = i + 1;
-                    post(callback, "Silakan bicara secara alami — sampel " + number + " dari " + sampleCount + ".");
-                    // Prevent IMO's TTS prompt from leaking into the microphone capture.
-                    Thread.sleep(TTS_GUARD_MS);
-                    short[] pcm = IMOAudioRecorder.record(clipMs);
-                    if (!hasUsableVoice(pcm)) {
-                        post(callback, "Suara belum cukup jelas. Kita ulangi sampel " + number + ".");
-                        i--;
-                        continue;
+                    boolean captured = false;
+                    for (int attempt = 1; attempt <= MAX_ATTEMPTS_PER_SAMPLE && !captured; attempt++) {
+                        post(callback, "Sampel " + number + " dari " + sampleCount + " — silakan bicara alami.");
+                        // Give the previous IMO TTS utterance enough time to finish before opening the mic.
+                        Thread.sleep(TTS_GUARD_MS);
+                        short[] pcm = IMOAudioRecorder.record(clipMs);
+                        if (!hasUsableVoice(pcm)) {
+                            if (attempt < MAX_ATTEMPTS_PER_SAMPLE) {
+                                post(callback, "Suara belum cukup jelas. Ulangi sampel " + number + " (" + (attempt + 1) + "/" + MAX_ATTEMPTS_PER_SAMPLE + ").");
+                            }
+                            continue;
+                        }
+                        float[] embedding = encoder.embed(trimSilence(pcm), IMOAudioRecorder.SAMPLE_RATE);
+                        if (embedding == null || embedding.length < 8)
+                            throw new IllegalStateException("Encoder menghasilkan voice embedding yang tidak valid");
+                        embeddings.add(normalize(embedding));
+                        captured = true;
                     }
-                    float[] embedding = encoder.embed(trimSilence(pcm), IMOAudioRecorder.SAMPLE_RATE);
-                    if (embedding == null || embedding.length < 8)
-                        throw new IllegalStateException("Encoder menghasilkan voice embedding yang tidak valid");
-                    embeddings.add(normalize(embedding));
+                    if (!captured) {
+                        postFinish(callback, false, "Sampel " + number + " belum dapat dibaca setelah beberapa percobaan. Coba di tempat yang lebih tenang dan dekatkan ponsel.");
+                        return;
+                    }
                 }
                 float[] profile = normalize(average(embeddings));
                 identity.enroll(profile);
@@ -65,7 +75,7 @@ public final class IMOVoiceEnrollment {
     }
 
     private static boolean hasUsableVoice(short[] pcm) {
-        if (pcm == null || pcm.length < 32000) return false;
+        if (pcm == null || pcm.length < 24000) return false;
         double sum = 0;
         for (short sample : pcm) {
             double x = sample / 32768.0;
@@ -76,7 +86,7 @@ public final class IMOVoiceEnrollment {
 
     private static short[] trimSilence(short[] pcm) {
         if (pcm == null || pcm.length == 0) return pcm;
-        double threshold = 0.012;
+        double threshold = 0.008;
         int first = 0, last = pcm.length - 1;
         while (first < pcm.length && Math.abs(pcm[first] / 32768.0) < threshold) first++;
         while (last > first && Math.abs(pcm[last] / 32768.0) < threshold) last--;
@@ -85,7 +95,7 @@ public final class IMOVoiceEnrollment {
         last = Math.min(pcm.length - 1, last + padding);
         short[] out = new short[last - first + 1];
         System.arraycopy(pcm, first, out, 0, out.length);
-        return out.length >= 16000 ? out : pcm;
+        return out.length >= 12000 ? out : pcm;
     }
 
     private static float[] average(List<float[]> values) {
