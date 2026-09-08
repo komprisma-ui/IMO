@@ -3,9 +3,13 @@ package com.imo.operator;
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.AccessibilityNodeInfo;
 import android.content.Intent;
+import android.graphics.Rect;
 import android.os.Bundle;
+import android.os.SystemClock;
 import android.view.accessibility.AccessibilityEvent;
+import java.util.Locale;
 
+/** Device perception/execution layer for IMO. */
 public class IMOAccessibilityService extends AccessibilityService {
     public static IMOAccessibilityService instance;
 
@@ -31,8 +35,8 @@ public class IMOAccessibilityService extends AccessibilityService {
         StringBuilder b = new StringBuilder();
         walk(root, b);
         String s = b.toString().trim();
-        if (s.length() == 0) return "Tidak ada teks yang terbaca.";
-        return "Saya membaca layar: " + (s.length() > 2200 ? s.substring(0, 2200) : s);
+        if (s.isEmpty()) return "Tidak ada teks yang terbaca.";
+        return "Saya membaca layar: " + (s.length() > 3500 ? s.substring(0, 3500) : s);
     }
 
     private void walk(AccessibilityNodeInfo node, StringBuilder b) {
@@ -47,6 +51,7 @@ public class IMOAccessibilityService extends AccessibilityService {
 
     public boolean clickText(String query) {
         AccessibilityNodeInfo node = find(getRootInActiveWindow(), query);
+        if (node == null) node = findContains(getRootInActiveWindow(), query);
         if (node == null) return false;
         for (AccessibilityNodeInfo p = node; p != null; p = p.getParent()) {
             if (p.isClickable() && p.isEnabled()) return p.performAction(AccessibilityNodeInfo.ACTION_CLICK);
@@ -66,12 +71,54 @@ public class IMOAccessibilityService extends AccessibilityService {
         return null;
     }
 
+    private AccessibilityNodeInfo findContains(AccessibilityNodeInfo node, String query) {
+        if (node == null) return null;
+        String q = query.toLowerCase(Locale.ROOT);
+        CharSequence text = node.getText(), desc = node.getContentDescription();
+        if ((text != null && text.toString().toLowerCase(Locale.ROOT).contains(q)) ||
+            (desc != null && desc.toString().toLowerCase(Locale.ROOT).contains(q))) return node;
+        for (int i = 0; i < node.getChildCount(); i++) {
+            AccessibilityNodeInfo found = findContains(node.getChild(i), query);
+            if (found != null) return found;
+        }
+        return null;
+    }
+
     public boolean typeText(String text) {
         AccessibilityNodeInfo node = findEditable(getRootInActiveWindow());
         if (node == null) return false;
         Bundle args = new Bundle();
         args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text);
         return node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args);
+    }
+
+    public boolean scrollDown() { return scroll(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD); }
+    public boolean scrollUp() { return scroll(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD); }
+
+    private boolean scroll(int action) {
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        AccessibilityNodeInfo target = findScrollable(root);
+        return target != null && target.performAction(action);
+    }
+
+    private AccessibilityNodeInfo findScrollable(AccessibilityNodeInfo node) {
+        if (node == null) return null;
+        if (node.isScrollable() && node.isEnabled()) return node;
+        for (int i = 0; i < node.getChildCount(); i++) {
+            AccessibilityNodeInfo found = findScrollable(node.getChild(i));
+            if (found != null) return found;
+        }
+        return null;
+    }
+
+    public boolean longClickText(String query) {
+        AccessibilityNodeInfo node = find(getRootInActiveWindow(), query);
+        if (node == null) node = findContains(getRootInActiveWindow(), query);
+        if (node == null) return false;
+        for (AccessibilityNodeInfo p = node; p != null; p = p.getParent()) {
+            if (p.isClickable() && p.isEnabled()) return p.performAction(AccessibilityNodeInfo.ACTION_LONG_CLICK);
+        }
+        return false;
     }
 
     private AccessibilityNodeInfo findEditable(AccessibilityNodeInfo node) {
