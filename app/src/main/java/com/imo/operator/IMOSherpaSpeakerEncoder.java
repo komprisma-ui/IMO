@@ -14,6 +14,7 @@ public final class IMOSherpaSpeakerEncoder implements IMOSpeakerEncoder {
         SpeakerEmbeddingExtractorConfig config = new SpeakerEmbeddingExtractorConfig(
                 MODEL_NAME, 2, false, "cpu");
         extractor = new SpeakerEmbeddingExtractor(context.getAssets(), config);
+        if (extractor.dim() < 8) throw new IllegalStateException("Invalid speaker model dimension");
     }
 
     @Override public synchronized float[] embed(short[] pcm16, int sampleRateHz) throws Exception {
@@ -25,6 +26,7 @@ public final class IMOSherpaSpeakerEncoder implements IMOSpeakerEncoder {
         try {
             stream.acceptWaveform(samples, sampleRateHz);
             stream.inputFinished();
+            if (!extractor.isReady(stream)) throw new IllegalStateException("Speaker model could not process the voice sample");
             float[] embedding = extractor.compute(stream);
             if (embedding == null || embedding.length < 8) throw new IllegalStateException("Speaker model returned no embedding");
             return embedding;
