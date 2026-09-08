@@ -6,28 +6,23 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.provider.Settings;
-import android.speech.RecognitionListener;
-import android.speech.RecognizerIntent;
-import android.speech.SpeechRecognizer;
 import android.speech.tts.TextToSpeech;
 import android.view.Gravity;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import java.util.ArrayList;
 import java.util.Locale;
 
-/** IMO operator UI: Indonesian voice I/O, speaker gate, task execution, confirmation and memory. */
+/** IMO operator UI: local speaker lock, local ASR, task execution, confirmation and memory. */
 public class MainActivity extends Activity implements TextToSpeech.OnInitListener {
     private TextView status, chat, voiceStatus;
     private Button mic;
-    private SpeechRecognizer speechRecognizer;
     private TextToSpeech tts;
     private IMOEngine engine;
     private IMOConfirmation confirmation;
     private IMOMemory memory;
     private IMOVoiceIdentity voiceIdentity;
-    private volatile boolean verifyingSpeaker;
+    private volatile boolean voiceBusy;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state); buildUi();
@@ -35,21 +30,6 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         tts = new TextToSpeech(this, this);
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED)
             requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, 10);
-        speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this);
-        speechRecognizer.setRecognitionListener(new RecognitionListener() {
-            public void onReadyForSpeech(Bundle b) { status.setText("Mendengarkan…"); }
-            public void onBeginningOfSpeech() { status.setText("Saya mendengar, ji…"); }
-            public void onRmsChanged(float v) {}
-            public void onBufferReceived(byte[] b) {}
-            public void onEndOfSpeech() { mic.setText("🎙 MULAI BICARA"); }
-            public void onError(int e) { mic.setText("🎙 MULAI BICARA"); status.setText("Tidak menangkap suara. Coba lagi."); }
-            public void onResults(Bundle r) {
-                ArrayList<String> a = r.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
-                if (a != null && !a.isEmpty()) command(a.get(0));
-            }
-            public void onPartialResults(Bundle b) {}
-            public void onEvent(int t, Bundle b) {}
-        });
         refreshVoiceStatus();
     }
 
@@ -75,13 +55,12 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
     private void refreshVoiceStatus() {
         if (voiceStatus == null || voiceIdentity == null) return;
         voiceStatus.setText(voiceIdentity.isEnrolled()
-                ? "🔐 Voiceprint: TERDAFTAR — tersimpan terenkripsi di perangkat"
+                ? "🔐 Voiceprint: TERDAFTAR — terenkripsi di perangkat"
                 : "🔒 Voiceprint: BELUM TERDAFTAR — voice lock belum aktif");
     }
 
     private void enrollVoice() {
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) { requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, 10); return; }
-        if (speechRecognizer != null) speechRecognizer.cancel();
         status.setText("Menyiapkan pendaftaran suara…");
         new Thread(() -> {
             try {
@@ -97,42 +76,34 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         }, "IMO-Voice-Setup").start();
     }
 
-    /** Android 11 cannot feed the exact AudioRecord buffer into SpeechRecognizer, so stage-1 uses a dedicated speaker gate before STT. */
+    /** One capture: VAD -> speaker verification -> same PCM -> local multilingual ASR. */
     private void listen() {
-        if (speechRecognizer == null || verifyingSpeaker) return;
+        if (voiceBusy) return;
         if (!voiceIdentity.isEnrolled()) { status.setText("Voiceprint belum terdaftar. Daftarkan suara terlebih dahulu."); speak("Silakan daftarkan suara Anda terlebih dahulu."); return; }
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) { requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, 10); return; }
-        if (speechRecognizer != null) speechRecognizer.cancel();
-        verifyingSpeaker = true; mic.setText("🔐 MEMERIKSA SUARA…"); status.setText("Ucapkan kalimat pendek untuk verifikasi suara…"); speak("Silakan bicara untuk verifikasi suara.");
-        new Thread(() -> {
-            IMOSherpaSpeakerEncoder encoder = null;
-            try {
-                encoder = new IMOSherpaSpeakerEncoder(this);
-                IMOSpeakerGate gate = new IMOSpeakerGate(1, 1, 0.72f);
-                IMOVoiceVerifier verifier = new IMOVoiceVerifier(encoder, voiceIdentity, gate);
-                short[] pcm = IMOAudioRecorder.record(2500);
-                boolean accepted = verifier.verify(pcm, IMOAudioRecorder.SAMPLE_RATE);
-                IMOSherpaSpeakerEncoder finalEncoder = encoder;
-                runOnUiThread(() -> {
-                    verifyingSpeaker = false; finalEncoder.release(); mic.setText("🎙 MULAI BICARA");
-                    if (accepted) startSpeechRecognition();
-                    else { status.setText("Suara tidak dikenali. IMO tidak memproses perintah."); chat.setText("IMO: Akses suara ditolak."); speak("Suara tidak dikenali. Saya tidak akan menjalankan perintah."); }
-                });
-            } catch (Exception e) {
-                if (encoder != null) encoder.release();
-                runOnUiThread(() -> { verifyingSpeaker = false; mic.setText("🎙 MULAI BICARA"); status.setText("Verifikasi suara gagal."); chat.setText("IMO: Voice gate berhenti aman: " + safe(e.getMessage())); });
-            }
-        }, "IMO-Voice-Gate").start();
-    }
-
-    private void startSpeechRecognition() {
-        if (speechRecognizer == null) return;
-        status.setText("Suara cocok ✓ — sekarang dengarkan perintah…");
-        Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
-        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
-        intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "id-ID");
-        intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false);
-        mic.setText("⏹ MENDENGARKAN PERINTAH…"); speechRecognizer.startListening(intent);
+        voiceBusy = true; mic.setText("🔐 MENDENGARKAN & MEMERIKSA…");
+        IMOVoiceCommandPipeline pipeline = new IMOVoiceCommandPipeline(this, voiceIdentity, 0.72f);
+        boolean started;
+        try {
+            started = pipeline.start(5000, new IMOVoiceCommandPipeline.Callback() {
+                @Override public void onState(String message) { runOnUiThread(() -> status.setText(message)); }
+                @Override public void onAccepted(short[] pcm16, int sampleRateHz) {
+                    IMOLocalAsr asr = null;
+                    try {
+                        runOnUiThread(() -> status.setText("Suara cocok ✓. Memahami perintah secara offline…"));
+                        asr = new IMOLocalAsr(MainActivity.this);
+                        String text = asr.transcribe(pcm16, sampleRateHz);
+                        if (text.isEmpty()) runOnUiThread(() -> { status.setText("Ucapan belum terbaca."); chat.setText("IMO: Saya belum menangkap perintahnya."); speak("Saya belum menangkap perintahnya."); });
+                        else runOnUiThread(() -> command(text));
+                    } catch (Exception e) {
+                        runOnUiThread(() -> { status.setText("ASR lokal gagal."); chat.setText("IMO: Tidak dapat memahami suara: " + safe(e.getMessage())); speak("Saya belum dapat memahami ucapan itu."); });
+                    } finally { if (asr != null) asr.release(); voiceBusy = false; runOnUiThread(() -> mic.setText("🎙 MULAI BICARA")); }
+                }
+                @Override public void onRejected(String message) { voiceBusy = false; runOnUiThread(() -> { mic.setText("🎙 MULAI BICARA"); status.setText("Akses suara ditolak."); chat.setText("IMO: " + message); speak(message); }); }
+                @Override public void onError(String message) { voiceBusy = false; runOnUiThread(() -> { mic.setText("🎙 MULAI BICARA"); status.setText("Pipeline suara berhenti aman."); chat.setText("IMO: " + message); }); }
+            });
+        } catch (Exception e) { started = false; }
+        if (!started) { voiceBusy = false; mic.setText("🎙 MULAI BICARA"); status.setText("Tidak dapat memulai pipeline suara."); }
     }
 
     private void command(String input) {
@@ -148,6 +119,6 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
 
     private void speak(String text) { if (tts != null && text != null) tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "imo"); }
     @Override public void onInit(int result) { if (result == TextToSpeech.SUCCESS) { tts.setLanguage(new Locale("id","ID")); tts.setSpeechRate(.95f); } }
-    @Override protected void onDestroy() { if (speechRecognizer != null) speechRecognizer.destroy(); if (tts != null) { tts.stop(); tts.shutdown(); } super.onDestroy(); }
+    @Override protected void onDestroy() { if (tts != null) { tts.stop(); tts.shutdown(); } super.onDestroy(); }
     private static String safe(String s) { return s == null || s.trim().isEmpty() ? "kesalahan tidak diketahui" : s; }
 }
