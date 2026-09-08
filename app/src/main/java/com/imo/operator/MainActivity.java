@@ -66,7 +66,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
             try {
                 IMOSherpaSpeakerEncoder encoder = new IMOSherpaSpeakerEncoder(this);
                 IMOVoiceEnrollment enrollment = new IMOVoiceEnrollment(encoder, voiceIdentity);
-                enrollment.enroll(3, 2500, new IMOVoiceEnrollment.Callback() {
+                enrollment.enroll(3, 4000, new IMOVoiceEnrollment.Callback() {
                     @Override public void onProgress(String message) { runOnUiThread(() -> { status.setText(message); speak(message); }); }
                     @Override public void onFinished(boolean success, String message) {
                         encoder.release(); runOnUiThread(() -> { status.setText(success ? "Voiceprint siap ✓" : "Pendaftaran gagal"); chat.setText("IMO: " + message); refreshVoiceStatus(); speak(message); });
