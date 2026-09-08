@@ -12,18 +12,24 @@ public class IMOAccessibilityService extends AccessibilityService {
     @Override public void onServiceConnected() { instance = this; }
     @Override public void onAccessibilityEvent(AccessibilityEvent event) { }
     @Override public void onInterrupt() { }
+    @Override public void onDestroy() { if (instance == this) instance = null; super.onDestroy(); }
 
-    public void openApp(String packageName) {
+    public boolean openApp(String packageName) {
         Intent intent = getPackageManager().getLaunchIntentForPackage(packageName);
-        if (intent != null) { intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); startActivity(intent); }
+        if (intent == null) return false;
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        startActivity(intent);
+        return true;
     }
-    public void goBack() { performGlobalAction(GLOBAL_ACTION_BACK); }
-    public void goHome() { performGlobalAction(GLOBAL_ACTION_HOME); }
+
+    public boolean goBack() { return performGlobalAction(GLOBAL_ACTION_BACK); }
+    public boolean goHome() { return performGlobalAction(GLOBAL_ACTION_HOME); }
 
     public String readScreen() {
         AccessibilityNodeInfo root = getRootInActiveWindow();
         if (root == null) return "Accessibility belum bisa membaca layar.";
-        StringBuilder b = new StringBuilder(); walk(root, b);
+        StringBuilder b = new StringBuilder();
+        walk(root, b);
         String s = b.toString().trim();
         if (s.length() == 0) return "Tidak ada teks yang terbaca.";
         return "Saya membaca layar: " + (s.length() > 2200 ? s.substring(0, 2200) : s);
@@ -33,7 +39,8 @@ public class IMOAccessibilityService extends AccessibilityService {
         if (node == null) return;
         CharSequence text = node.getText(), desc = node.getContentDescription();
         if ((text != null && text.length() > 0) || (desc != null && desc.length() > 0)) {
-            if (b.length() > 0) b.append(". "); b.append(text != null && text.length() > 0 ? text : desc);
+            if (b.length() > 0) b.append(". ");
+            b.append(text != null && text.length() > 0 ? text : desc);
         }
         for (int i = 0; i < node.getChildCount(); i++) walk(node.getChild(i), b);
     }
@@ -42,7 +49,7 @@ public class IMOAccessibilityService extends AccessibilityService {
         AccessibilityNodeInfo node = find(getRootInActiveWindow(), query);
         if (node == null) return false;
         for (AccessibilityNodeInfo p = node; p != null; p = p.getParent()) {
-            if (p.isClickable()) return p.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+            if (p.isClickable() && p.isEnabled()) return p.performAction(AccessibilityNodeInfo.ACTION_CLICK);
         }
         return false;
     }
