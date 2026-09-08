@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">IMO</string>
+    <string name="accessibility_desc">IMO membaca antarmuka dan menjalankan tindakan yang diminta pengguna.</string>
+</resources>
