@@ -7,11 +7,13 @@ import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.speech.tts.TextToSpeech;
+import android.speech.tts.Voice;
 import android.view.Gravity;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import java.util.Locale;
+import java.util.Set;
 
 /** IMO operator UI: local speaker lock, local ASR, task execution, confirmation and memory. */
 public class MainActivity extends Activity implements TextToSpeech.OnInitListener {
@@ -54,25 +56,28 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
 
     private void refreshVoiceStatus() {
         if (voiceStatus == null || voiceIdentity == null) return;
-        voiceStatus.setText(voiceIdentity.isEnrolled()
-                ? "🔐 Voiceprint: TERDAFTAR — terenkripsi di perangkat"
-                : "🔒 Voiceprint: BELUM TERDAFTAR — voice lock belum aktif");
+        voiceStatus.setText(voiceIdentity.isEnrolled() ? "🔐 Voiceprint: TERDAFTAR — terenkripsi di perangkat" : "🔒 Voiceprint: BELUM TERDAFTAR — voice lock belum aktif");
     }
 
     private void enrollVoice() {
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) { requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, 10); return; }
-        status.setText("Menyiapkan pendaftaran suara…");
+        status.setText("Siap. Ikuti instruksi dengan suara alami.");
+        speak("Baik. Mari kita daftarkan suara Anda. Setelah saya selesai berbicara, silakan ucapkan secara alami.");
         new Thread(() -> {
             try {
+                Thread.sleep(2500);
                 IMOSherpaSpeakerEncoder encoder = new IMOSherpaSpeakerEncoder(this);
                 IMOVoiceEnrollment enrollment = new IMOVoiceEnrollment(encoder, voiceIdentity);
-                enrollment.enroll(3, 2500, new IMOVoiceEnrollment.Callback() {
-                    @Override public void onProgress(String message) { runOnUiThread(() -> { status.setText(message); speak(message); }); }
+                enrollment.enroll(3, 4000, new IMOVoiceEnrollment.Callback() {
+                    @Override public void onProgress(String message) {
+                        runOnUiThread(() -> status.setText(message));
+                    }
                     @Override public void onFinished(boolean success, String message) {
-                        encoder.release(); runOnUiThread(() -> { status.setText(success ? "Voiceprint siap ✓" : "Pendaftaran gagal"); chat.setText("IMO: " + message); refreshVoiceStatus(); speak(message); });
+                        encoder.release();
+                        runOnUiThread(() -> { status.setText(success ? "Voiceprint siap ✓" : "Pendaftaran suara perlu diulang"); chat.setText("IMO: " + message); refreshVoiceStatus(); speak(message); });
                     }
                 });
-            } catch (Exception e) { runOnUiThread(() -> { status.setText("Model suara belum siap"); chat.setText("IMO: Enrollment gagal: " + safe(e.getMessage())); speak("Pendaftaran suara gagal."); }); }
+            } catch (Exception e) { runOnUiThread(() -> { status.setText("Pendaftaran suara perlu diulang"); chat.setText("IMO: Enrollment gagal: " + safe(e.getMessage())); speak("Pendaftaran suara perlu diulang. Silakan coba sekali lagi."); }); }
         }, "IMO-Voice-Setup").start();
     }
 
@@ -84,25 +89,12 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         voiceBusy = true; mic.setText("🔐 MENDENGARKAN & MEMERIKSA…");
         IMOVoiceCommandPipeline pipeline = new IMOVoiceCommandPipeline(this, voiceIdentity, 0.72f);
         boolean started;
-        try {
-            started = pipeline.start(5000, new IMOVoiceCommandPipeline.Callback() {
-                @Override public void onState(String message) { runOnUiThread(() -> status.setText(message)); }
-                @Override public void onAccepted(short[] pcm16, int sampleRateHz) {
-                    IMOLocalAsr asr = null;
-                    try {
-                        runOnUiThread(() -> status.setText("Suara cocok ✓. Memahami perintah secara offline…"));
-                        asr = new IMOLocalAsr(MainActivity.this);
-                        String text = asr.transcribe(pcm16, sampleRateHz);
-                        if (text.isEmpty()) runOnUiThread(() -> { status.setText("Ucapan belum terbaca."); chat.setText("IMO: Saya belum menangkap perintahnya."); speak("Saya belum menangkap perintahnya."); });
-                        else runOnUiThread(() -> command(text));
-                    } catch (Exception e) {
-                        runOnUiThread(() -> { status.setText("ASR lokal gagal."); chat.setText("IMO: Tidak dapat memahami suara: " + safe(e.getMessage())); speak("Saya belum dapat memahami ucapan itu."); });
-                    } finally { if (asr != null) asr.release(); voiceBusy = false; runOnUiThread(() -> mic.setText("🎙 MULAI BICARA")); }
-                }
-                @Override public void onRejected(String message) { voiceBusy = false; runOnUiThread(() -> { mic.setText("🎙 MULAI BICARA"); status.setText("Akses suara ditolak."); chat.setText("IMO: " + message); speak(message); }); }
-                @Override public void onError(String message) { voiceBusy = false; runOnUiThread(() -> { mic.setText("🎙 MULAI BICARA"); status.setText("Pipeline suara berhenti aman."); chat.setText("IMO: " + message); }); }
-            });
-        } catch (Exception e) { started = false; }
+        try { started = pipeline.start(5000, new IMOVoiceCommandPipeline.Callback() {
+            @Override public void onState(String message) { runOnUiThread(() -> status.setText(message)); }
+            @Override public void onAccepted(short[] pcm16, int sampleRateHz) { IMOLocalAsr asr = null; try { runOnUiThread(() -> status.setText("Suara cocok ✓. Memahami perintah secara offline…")); asr = new IMOLocalAsr(MainActivity.this); String text = asr.transcribe(pcm16, sampleRateHz); if (text.isEmpty()) runOnUiThread(() -> { status.setText("Ucapan belum terbaca."); chat.setText("IMO: Saya belum menangkap perintahnya."); speak("Saya belum menangkap perintahnya."); }); else runOnUiThread(() -> command(text)); } catch (Exception e) { runOnUiThread(() -> { status.setText("ASR lokal gagal."); chat.setText("IMO: Tidak dapat memahami suara: " + safe(e.getMessage())); speak("Saya belum dapat memahami ucapan itu."); }); } finally { if (asr != null) asr.release(); voiceBusy = false; runOnUiThread(() -> mic.setText("🎙 MULAI BICARA")); } }
+            @Override public void onRejected(String message) { voiceBusy = false; runOnUiThread(() -> { mic.setText("🎙 MULAI BICARA"); status.setText("Akses suara ditolak."); chat.setText("IMO: " + message); speak(message); }); }
+            @Override public void onError(String message) { voiceBusy = false; runOnUiThread(() -> { mic.setText("🎙 MULAI BICARA"); status.setText("Pipeline suara berhenti aman."); chat.setText("IMO: " + message); }); }
+        }); } catch (Exception e) { started = false; }
         if (!started) { voiceBusy = false; mic.setText("🎙 MULAI BICARA"); status.setText("Tidak dapat memulai pipeline suara."); }
     }
 
@@ -118,7 +110,28 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
     }
 
     private void speak(String text) { if (tts != null && text != null) tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "imo"); }
-    @Override public void onInit(int result) { if (result == TextToSpeech.SUCCESS) { tts.setLanguage(new Locale("id","ID")); tts.setSpeechRate(.95f); } }
+
+    @Override public void onInit(int result) {
+        if (result != TextToSpeech.SUCCESS) return;
+        Locale indonesia = new Locale("id", "ID");
+        int language = tts.setLanguage(indonesia);
+        tts.setSpeechRate(.88f);
+        tts.setPitch(.78f);
+        if (language == TextToSpeech.LANG_MISSING_DATA || language == TextToSpeech.LANG_NOT_SUPPORTED) return;
+        Voice male = findMaleIndonesianVoice(tts.getVoices(), indonesia);
+        if (male != null) tts.setVoice(male);
+    }
+
+    private static Voice findMaleIndonesianVoice(Set<Voice> voices, Locale locale) {
+        if (voices == null) return null;
+        for (Voice voice : voices) {
+            if (voice == null || voice.getLocale() == null || !voice.getLocale().getLanguage().equals(locale.getLanguage())) continue;
+            String name = voice.getName() == null ? "" : voice.getName().toLowerCase(Locale.US);
+            if (name.contains("male") || name.contains("man") || name.contains("pria") || name.contains("#m")) return voice;
+        }
+        return null;
+    }
+
     @Override protected void onDestroy() { if (tts != null) { tts.stop(); tts.shutdown(); } super.onDestroy(); }
     private static String safe(String s) { return s == null || s.trim().isEmpty() ? "kesalahan tidak diketahui" : s; }
 }
