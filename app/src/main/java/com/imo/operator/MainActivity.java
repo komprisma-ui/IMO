@@ -7,11 +7,13 @@ import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.speech.tts.TextToSpeech;
+import android.speech.tts.Voice;
 import android.view.Gravity;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 import java.util.Locale;
+import java.util.Set;
 
 /** IMO operator UI: local speaker lock, local ASR, task execution, confirmation and memory. */
 public class MainActivity extends Activity implements TextToSpeech.OnInitListener {
@@ -108,7 +110,28 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
     }
 
     private void speak(String text) { if (tts != null && text != null) tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "imo"); }
-    @Override public void onInit(int result) { if (result == TextToSpeech.SUCCESS) { tts.setLanguage(new Locale("id","ID")); tts.setSpeechRate(.88f); tts.setPitch(.78f); } }
+
+    @Override public void onInit(int result) {
+        if (result != TextToSpeech.SUCCESS) return;
+        Locale indonesia = new Locale("id", "ID");
+        int language = tts.setLanguage(indonesia);
+        tts.setSpeechRate(.88f);
+        tts.setPitch(.78f);
+        if (language == TextToSpeech.LANG_MISSING_DATA || language == TextToSpeech.LANG_NOT_SUPPORTED) return;
+        Voice male = findMaleIndonesianVoice(tts.getVoices(), indonesia);
+        if (male != null) tts.setVoice(male);
+    }
+
+    private static Voice findMaleIndonesianVoice(Set<Voice> voices, Locale locale) {
+        if (voices == null) return null;
+        for (Voice voice : voices) {
+            if (voice == null || voice.getLocale() == null || !voice.getLocale().getLanguage().equals(locale.getLanguage())) continue;
+            String name = voice.getName() == null ? "" : voice.getName().toLowerCase(Locale.US);
+            if (name.contains("male") || name.contains("man") || name.contains("pria") || name.contains("#m")) return voice;
+        }
+        return null;
+    }
+
     @Override protected void onDestroy() { if (tts != null) { tts.stop(); tts.shutdown(); } super.onDestroy(); }
     private static String safe(String s) { return s == null || s.trim().isEmpty() ? "kesalahan tidak diketahui" : s; }
 }
