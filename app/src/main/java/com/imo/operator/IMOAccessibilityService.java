@@ -3,9 +3,7 @@ package com.imo.operator;
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.AccessibilityNodeInfo;
 import android.content.Intent;
-import android.graphics.Rect;
 import android.os.Bundle;
-import android.os.SystemClock;
 import android.view.accessibility.AccessibilityEvent;
 import java.util.Locale;
 
@@ -30,28 +28,27 @@ public class IMOAccessibilityService extends AccessibilityService {
     public boolean goHome() { return performGlobalAction(GLOBAL_ACTION_HOME); }
 
     public String readScreen() {
-        AccessibilityNodeInfo root = getRootInActiveWindow();
-        if (root == null) return "Accessibility belum bisa membaca layar.";
-        StringBuilder b = new StringBuilder();
-        walk(root, b);
-        String s = b.toString().trim();
-        if (s.isEmpty()) return "Tidak ada teks yang terbaca.";
-        return "Saya membaca layar: " + (s.length() > 3500 ? s.substring(0, 3500) : s);
+        IMOUISnapshot snapshot = IMOUISnapshot.capture(this);
+        String compact = snapshot.compact(3500);
+        if (compact.isEmpty()) return "Tidak ada elemen UI yang terbaca.";
+        return "Saya membaca layar:\n" + compact;
     }
 
-    private void walk(AccessibilityNodeInfo node, StringBuilder b) {
-        if (node == null) return;
-        CharSequence text = node.getText(), desc = node.getContentDescription();
-        if ((text != null && text.length() > 0) || (desc != null && desc.length() > 0)) {
-            if (b.length() > 0) b.append(". ");
-            b.append(text != null && text.length() > 0 ? text : desc);
-        }
-        for (int i = 0; i < node.getChildCount(); i++) walk(node.getChild(i), b);
-    }
+    /** Exposes a structured UI state for IMO's planner/Brain. */
+    public IMOUISnapshot snapshot() { return IMOUISnapshot.capture(this); }
 
     public boolean clickText(String query) {
         AccessibilityNodeInfo node = find(getRootInActiveWindow(), query);
         if (node == null) node = findContains(getRootInActiveWindow(), query);
+        if (node == null) {
+            IMOUISnapshot.Node candidate = snapshot().bestMatch(query);
+            if (candidate != null) node = find(getRootInActiveWindow(), candidate.label());
+            if (node == null && candidate != null) node = findContains(getRootInActiveWindow(), candidate.label());
+        }
+        return clickNode(node);
+    }
+
+    private boolean clickNode(AccessibilityNodeInfo node) {
         if (node == null) return false;
         for (AccessibilityNodeInfo p = node; p != null; p = p.getParent()) {
             if (p.isClickable() && p.isEnabled()) return p.performAction(AccessibilityNodeInfo.ACTION_CLICK);
@@ -61,9 +58,10 @@ public class IMOAccessibilityService extends AccessibilityService {
 
     private AccessibilityNodeInfo find(AccessibilityNodeInfo node, String query) {
         if (node == null) return null;
+        String q = normalize(query);
         CharSequence text = node.getText(), desc = node.getContentDescription();
-        if ((text != null && text.toString().equalsIgnoreCase(query)) ||
-            (desc != null && desc.toString().equalsIgnoreCase(query))) return node;
+        if ((text != null && normalize(text.toString()).equals(q)) ||
+            (desc != null && normalize(desc.toString()).equals(q))) return node;
         for (int i = 0; i < node.getChildCount(); i++) {
             AccessibilityNodeInfo found = find(node.getChild(i), query);
             if (found != null) return found;
@@ -73,15 +71,19 @@ public class IMOAccessibilityService extends AccessibilityService {
 
     private AccessibilityNodeInfo findContains(AccessibilityNodeInfo node, String query) {
         if (node == null) return null;
-        String q = query.toLowerCase(Locale.ROOT);
+        String q = normalize(query);
         CharSequence text = node.getText(), desc = node.getContentDescription();
-        if ((text != null && text.toString().toLowerCase(Locale.ROOT).contains(q)) ||
-            (desc != null && desc.toString().toLowerCase(Locale.ROOT).contains(q))) return node;
+        if ((text != null && normalize(text.toString()).contains(q)) ||
+            (desc != null && normalize(desc.toString()).contains(q))) return node;
         for (int i = 0; i < node.getChildCount(); i++) {
             AccessibilityNodeInfo found = findContains(node.getChild(i), query);
             if (found != null) return found;
         }
         return null;
+    }
+
+    private String normalize(String s) {
+        return s == null ? "" : s.toLowerCase(Locale.ROOT).replaceAll("\\s+", " ").trim();
     }
 
     public boolean typeText(String text) {
@@ -96,8 +98,7 @@ public class IMOAccessibilityService extends AccessibilityService {
     public boolean scrollUp() { return scroll(AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD); }
 
     private boolean scroll(int action) {
-        AccessibilityNodeInfo root = getRootInActiveWindow();
-        AccessibilityNodeInfo target = findScrollable(root);
+        AccessibilityNodeInfo target = findScrollable(getRootInActiveWindow());
         return target != null && target.performAction(action);
     }
 
