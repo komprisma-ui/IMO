@@ -17,6 +17,7 @@ import android.widget.TextView;
 import java.util.ArrayList;
 import java.util.Locale;
 
+/** IMO operator UI: Indonesian voice I/O, task execution, confirmation and local conversation memory. */
 public class MainActivity extends Activity implements TextToSpeech.OnInitListener {
     private TextView status, chat;
     private Button mic;
@@ -24,9 +25,12 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
     private TextToSpeech tts;
     private IMOEngine engine;
     private IMOConfirmation confirmation;
+    private IMOMemory memory;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state); buildUi();
+        memory = new IMOMemory(this);
+        confirmation = new IMOConfirmation();
         tts = new TextToSpeech(this, this);
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED)
             requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, 10);
@@ -80,9 +84,11 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         engine.execute(clean, new IMOEngine.Callback() {
             @Override public void onProgress(String message) { runOnUiThread(() -> status.setText(message)); }
             @Override public void onConfirmationRequired(String message) {
+                memory.remember(clean, message);
                 runOnUiThread(() -> { status.setText("Menunggu konfirmasi"); chat.setText("Anda: " + clean + "\nIMO: " + message); speak(message); });
             }
             @Override public void onFinished(String message, boolean success) {
+                memory.remember(clean, message);
                 runOnUiThread(() -> { status.setText(success ? "Selesai ✓" : "Belum selesai"); chat.setText("Anda: " + clean + "\nIMO: " + message); speak(message); });
             }
         });
