@@ -1,0 +1,79 @@
+package com.imo.operator;
+
+import android.accessibilityservice.AccessibilityService;
+import android.accessibilityservice.AccessibilityNodeInfo;
+import android.content.Intent;
+import android.os.Bundle;
+import android.view.accessibility.AccessibilityEvent;
+
+public class IMOAccessibilityService extends AccessibilityService {
+    public static IMOAccessibilityService instance;
+
+    @Override public void onServiceConnected() { instance = this; }
+    @Override public void onAccessibilityEvent(AccessibilityEvent event) { }
+    @Override public void onInterrupt() { }
+
+    public void openApp(String packageName) {
+        Intent intent = getPackageManager().getLaunchIntentForPackage(packageName);
+        if (intent != null) { intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); startActivity(intent); }
+    }
+    public void goBack() { performGlobalAction(GLOBAL_ACTION_BACK); }
+    public void goHome() { performGlobalAction(GLOBAL_ACTION_HOME); }
+
+    public String readScreen() {
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        if (root == null) return "Accessibility belum bisa membaca layar.";
+        StringBuilder b = new StringBuilder(); walk(root, b);
+        String s = b.toString().trim();
+        if (s.length() == 0) return "Tidak ada teks yang terbaca.";
+        return "Saya membaca layar: " + (s.length() > 2200 ? s.substring(0, 2200) : s);
+    }
+
+    private void walk(AccessibilityNodeInfo node, StringBuilder b) {
+        if (node == null) return;
+        CharSequence text = node.getText(), desc = node.getContentDescription();
+        if ((text != null && text.length() > 0) || (desc != null && desc.length() > 0)) {
+            if (b.length() > 0) b.append(". "); b.append(text != null && text.length() > 0 ? text : desc);
+        }
+        for (int i = 0; i < node.getChildCount(); i++) walk(node.getChild(i), b);
+    }
+
+    public boolean clickText(String query) {
+        AccessibilityNodeInfo node = find(getRootInActiveWindow(), query);
+        if (node == null) return false;
+        for (AccessibilityNodeInfo p = node; p != null; p = p.getParent()) {
+            if (p.isClickable()) return p.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+        }
+        return false;
+    }
+
+    private AccessibilityNodeInfo find(AccessibilityNodeInfo node, String query) {
+        if (node == null) return null;
+        CharSequence text = node.getText(), desc = node.getContentDescription();
+        if ((text != null && text.toString().equalsIgnoreCase(query)) ||
+            (desc != null && desc.toString().equalsIgnoreCase(query))) return node;
+        for (int i = 0; i < node.getChildCount(); i++) {
+            AccessibilityNodeInfo found = find(node.getChild(i), query);
+            if (found != null) return found;
+        }
+        return null;
+    }
+
+    public boolean typeText(String text) {
+        AccessibilityNodeInfo node = findEditable(getRootInActiveWindow());
+        if (node == null) return false;
+        Bundle args = new Bundle();
+        args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text);
+        return node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args);
+    }
+
+    private AccessibilityNodeInfo findEditable(AccessibilityNodeInfo node) {
+        if (node == null) return null;
+        if (node.isEditable() && node.isEnabled()) return node;
+        for (int i = 0; i < node.getChildCount(); i++) {
+            AccessibilityNodeInfo found = findEditable(node.getChild(i));
+            if (found != null) return found;
+        }
+        return null;
+    }
+}
