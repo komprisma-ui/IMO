@@ -32,6 +32,20 @@ jobs:
       - name: Install Android SDK packages
         run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
+      - name: Fetch pinned speaker runtime and model
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p app/libs app/src/main/assets
+          curl -fL --retry 4 --retry-all-errors \
+            -o app/libs/sherpa-onnx-1.13.7.aar \
+            https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.13.7/sherpa-onnx-1.13.7.aar
+          echo "c4ef49e309f24fcee5c106b8a279481aaecaabb078cd37b2cd6e9a62cc8a73c8  app/libs/sherpa-onnx-1.13.7.aar" | sha256sum -c -
+          curl -fL --retry 4 --retry-all-errors \
+            -o app/src/main/assets/3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx \
+            https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx
+          echo "f682b514c05d947ee3fa91cd6ec6c5c7543479a128373fa29b1faedccd21fd11  app/src/main/assets/3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx" | sha256sum -c -
+
       - name: Build debug APK
         run: gradle assembleDebug --stacktrace
 
