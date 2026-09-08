@@ -1,6 +1,11 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+    </queries>
     <application android:theme="@style/AppTheme" android:label="IMO" android:icon="@drawable/imo_icon" android:roundIcon="@drawable/imo_icon" android:allowBackup="false">
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
