@@ -1,17 +1,17 @@
 package com.imo.operator;
 
-import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import org.junit.Test;
 
 public class IMOAudioPipelineTest {
-    @Test public void silentBufferHasZeroRms() {
-        assertEquals(0f, IMOAudioPipeline.rms(new short[16000]), 0.0001f);
+    @Test public void silentBufferIsRejected() {
+        assertFalse(IMOVoiceCommandPipeline.hasSpeech(new short[16000]));
     }
 
-    @Test public void nonSilentBufferHasPositiveRms() {
+    @Test public void sufficientlyLoudBufferIsAccepted() {
         short[] pcm = new short[16000];
-        for (int i = 0; i < pcm.length; i++) pcm[i] = (short)(i % 1000);
-        assertTrue(IMOAudioPipeline.rms(pcm) > 0f);
+        for (int i = 0; i < pcm.length; i++) pcm[i] = (short)((i % 40) * 500);
+        assertTrue(IMOVoiceCommandPipeline.hasSpeech(pcm));
     }
 }
