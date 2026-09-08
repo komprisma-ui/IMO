@@ -13,31 +13,30 @@ public final class IMOLocalAsr {
     private final OfflineRecognizer recognizer;
 
     public IMOLocalAsr(Context context) {
-        OfflineWhisperModelConfig whisper = new OfflineWhisperModelConfig(
-                MODEL_DIR + "/tiny-encoder.int8.onnx",
-                MODEL_DIR + "/tiny-decoder.int8.onnx",
-                "id",
-                "transcribe",
-                -1,
-                false,
-                false
-        );
-        OfflineModelConfig model = new OfflineModelConfig(
-                whisper,
-                null, null, null, null, null, null, null, null, null, null, null, null,
-                MODEL_DIR + "/tiny-tokens.txt",
-                2,
-                false,
-                "cpu",
-                "",
-                "",
-                ""
-        );
-        recognizer = new OfflineRecognizer(context.getAssets(), new OfflineRecognizerConfig(model));
+        if (context == null) throw new IllegalArgumentException("Context is required");
+        OfflineWhisperModelConfig whisper = new OfflineWhisperModelConfig();
+        whisper.setEncoder(MODEL_DIR + "/tiny-encoder.int8.onnx");
+        whisper.setDecoder(MODEL_DIR + "/tiny-decoder.int8.onnx");
+        whisper.setLanguage("id");
+        whisper.setTask("transcribe");
+        whisper.setTailPaddings(1000);
+
+        OfflineModelConfig model = new OfflineModelConfig();
+        model.setWhisper(whisper);
+        model.setTokens(MODEL_DIR + "/tiny-tokens.txt");
+        model.setNumThreads(2);
+        model.setProvider("cpu");
+        model.setModelType("whisper");
+
+        OfflineRecognizerConfig config = new OfflineRecognizerConfig();
+        config.setModelConfig(model);
+        config.setDecodingMethod("greedy_search");
+        recognizer = new OfflineRecognizer(context.getAssets(), config);
     }
 
     public synchronized String transcribe(short[] pcm16, int sampleRateHz) throws Exception {
         if (pcm16 == null || pcm16.length < 1600) throw new IllegalArgumentException("Audio terlalu pendek");
+        if (sampleRateHz <= 0) throw new IllegalArgumentException("Sample rate tidak valid");
         float[] samples = new float[pcm16.length];
         for (int i = 0; i < pcm16.length; i++) samples[i] = pcm16[i] / 32768.0f;
         OfflineStream stream = recognizer.createStream();
