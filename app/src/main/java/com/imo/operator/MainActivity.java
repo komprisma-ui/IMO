@@ -17,7 +17,7 @@ import android.widget.TextView;
 import java.util.ArrayList;
 import java.util.Locale;
 
-/** IMO operator UI: Indonesian voice I/O, task execution, secure voice enrollment and local memory. */
+/** IMO operator UI: Indonesian voice I/O, speaker gate, task execution, confirmation and memory. */
 public class MainActivity extends Activity implements TextToSpeech.OnInitListener {
     private TextView status, chat, voiceStatus;
     private Button mic;
@@ -27,12 +27,11 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
     private IMOConfirmation confirmation;
     private IMOMemory memory;
     private IMOVoiceIdentity voiceIdentity;
+    private volatile boolean verifyingSpeaker;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state); buildUi();
-        memory = new IMOMemory(this);
-        confirmation = new IMOConfirmation();
-        voiceIdentity = new IMOVoiceIdentity(this);
+        memory = new IMOMemory(this); confirmation = new IMOConfirmation(); voiceIdentity = new IMOVoiceIdentity(this);
         tts = new TextToSpeech(this, this);
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED)
             requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, 10);
@@ -57,8 +56,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
     @Override protected void onResume() {
         super.onResume();
         if (confirmation == null) confirmation = new IMOConfirmation();
-        engine = new IMOEngine(IMOAccessibilityService.instance, confirmation);
-        refreshVoiceStatus();
+        engine = new IMOEngine(IMOAccessibilityService.instance, confirmation); refreshVoiceStatus();
     }
 
     private void buildUi() {
@@ -82,9 +80,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
     }
 
     private void enrollVoice() {
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, 10); return;
-        }
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) { requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, 10); return; }
         if (speechRecognizer != null) speechRecognizer.cancel();
         status.setText("Menyiapkan pendaftaran suara…");
         new Thread(() -> {
@@ -94,27 +90,49 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
                 enrollment.enroll(3, 2500, new IMOVoiceEnrollment.Callback() {
                     @Override public void onProgress(String message) { runOnUiThread(() -> { status.setText(message); speak(message); }); }
                     @Override public void onFinished(boolean success, String message) {
-                        encoder.release();
-                        runOnUiThread(() -> { status.setText(success ? "Voiceprint siap ✓" : "Pendaftaran gagal"); chat.setText("IMO: " + message); refreshVoiceStatus(); speak(message); });
+                        encoder.release(); runOnUiThread(() -> { status.setText(success ? "Voiceprint siap ✓" : "Pendaftaran gagal"); chat.setText("IMO: " + message); refreshVoiceStatus(); speak(message); });
                     }
                 });
-            } catch (Exception e) {
-                runOnUiThread(() -> { status.setText("Model suara belum siap"); chat.setText("IMO: Enrollment gagal: " + e.getMessage()); speak("Pendaftaran suara gagal."); });
-            }
+            } catch (Exception e) { runOnUiThread(() -> { status.setText("Model suara belum siap"); chat.setText("IMO: Enrollment gagal: " + safe(e.getMessage())); speak("Pendaftaran suara gagal."); }); }
         }, "IMO-Voice-Setup").start();
     }
 
+    /** Android 11 cannot feed the exact AudioRecord buffer into SpeechRecognizer, so stage-1 uses a dedicated speaker gate before STT. */
     private void listen() {
+        if (speechRecognizer == null || verifyingSpeaker) return;
+        if (!voiceIdentity.isEnrolled()) { status.setText("Voiceprint belum terdaftar. Daftarkan suara terlebih dahulu."); speak("Silakan daftarkan suara Anda terlebih dahulu."); return; }
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) { requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, 10); return; }
+        if (speechRecognizer != null) speechRecognizer.cancel();
+        verifyingSpeaker = true; mic.setText("🔐 MEMERIKSA SUARA…"); status.setText("Ucapkan kalimat pendek untuk verifikasi suara…"); speak("Silakan bicara untuk verifikasi suara.");
+        new Thread(() -> {
+            IMOSherpaSpeakerEncoder encoder = null;
+            try {
+                encoder = new IMOSherpaSpeakerEncoder(this);
+                IMOSpeakerGate gate = new IMOSpeakerGate(1, 1, 0.72f);
+                IMOVoiceVerifier verifier = new IMOVoiceVerifier(encoder, voiceIdentity, gate);
+                short[] pcm = IMOAudioRecorder.record(2500);
+                boolean accepted = verifier.verify(pcm, IMOAudioRecorder.SAMPLE_RATE);
+                IMOSherpaSpeakerEncoder finalEncoder = encoder;
+                runOnUiThread(() -> {
+                    verifyingSpeaker = false; finalEncoder.release(); mic.setText("🎙 MULAI BICARA");
+                    if (accepted) startSpeechRecognition();
+                    else { status.setText("Suara tidak dikenali. IMO tidak memproses perintah."); chat.setText("IMO: Akses suara ditolak."); speak("Suara tidak dikenali. Saya tidak akan menjalankan perintah."); }
+                });
+            } catch (Exception e) {
+                if (encoder != null) encoder.release();
+                runOnUiThread(() -> { verifyingSpeaker = false; mic.setText("🎙 MULAI BICARA"); status.setText("Verifikasi suara gagal."); chat.setText("IMO: Voice gate berhenti aman: " + safe(e.getMessage())); });
+            }
+        }, "IMO-Voice-Gate").start();
+    }
+
+    private void startSpeechRecognition() {
         if (speechRecognizer == null) return;
-        if (!voiceIdentity.isEnrolled()) {
-            status.setText("Voiceprint belum terdaftar. Daftarkan suara terlebih dahulu.");
-            speak("Silakan daftarkan suara Anda terlebih dahulu."); return;
-        }
+        status.setText("Suara cocok ✓ — sekarang dengarkan perintah…");
         Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
         intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
         intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "id-ID");
         intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false);
-        mic.setText("⏹ MENDENGARKAN…"); speechRecognizer.startListening(intent);
+        mic.setText("⏹ MENDENGARKAN PERINTAH…"); speechRecognizer.startListening(intent);
     }
 
     private void command(String input) {
@@ -123,18 +141,13 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         engine = new IMOEngine(IMOAccessibilityService.instance, confirmation);
         engine.execute(clean, new IMOEngine.Callback() {
             @Override public void onProgress(String message) { runOnUiThread(() -> status.setText(message)); }
-            @Override public void onConfirmationRequired(String message) {
-                memory.remember(clean, message);
-                runOnUiThread(() -> { status.setText("Menunggu konfirmasi"); chat.setText("Anda: " + clean + "\nIMO: " + message); speak(message); });
-            }
-            @Override public void onFinished(String message, boolean success) {
-                memory.remember(clean, message);
-                runOnUiThread(() -> { status.setText(success ? "Selesai ✓" : "Belum selesai"); chat.setText("Anda: " + clean + "\nIMO: " + message); speak(message); });
-            }
+            @Override public void onConfirmationRequired(String message) { memory.remember(clean, message); runOnUiThread(() -> { status.setText("Menunggu konfirmasi"); chat.setText("Anda: " + clean + "\nIMO: " + message); speak(message); }); }
+            @Override public void onFinished(String message, boolean success) { memory.remember(clean, message); runOnUiThread(() -> { status.setText(success ? "Selesai ✓" : "Belum selesai"); chat.setText("Anda: " + clean + "\nIMO: " + message); speak(message); }); }
         });
     }
 
     private void speak(String text) { if (tts != null && text != null) tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "imo"); }
     @Override public void onInit(int result) { if (result == TextToSpeech.SUCCESS) { tts.setLanguage(new Locale("id","ID")); tts.setSpeechRate(.95f); } }
     @Override protected void onDestroy() { if (speechRecognizer != null) speechRecognizer.destroy(); if (tts != null) { tts.stop(); tts.shutdown(); } super.onDestroy(); }
+    private static String safe(String s) { return s == null || s.trim().isEmpty() ? "kesalahan tidak diketahui" : s; }
 }
