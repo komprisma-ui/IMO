@@ -63,12 +63,17 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         speak("Baik. Mari kita daftarkan suara Anda. Setelah saya selesai berbicara, silakan ucapkan secara alami.");
         new Thread(() -> {
             try {
-                Thread.sleep(1200);
+                Thread.sleep(2500);
                 IMOSherpaSpeakerEncoder encoder = new IMOSherpaSpeakerEncoder(this);
                 IMOVoiceEnrollment enrollment = new IMOVoiceEnrollment(encoder, voiceIdentity);
                 enrollment.enroll(3, 4000, new IMOVoiceEnrollment.Callback() {
-                    @Override public void onProgress(String message) { runOnUiThread(() -> { status.setText(message); speak(message); }); }
-                    @Override public void onFinished(boolean success, String message) { encoder.release(); runOnUiThread(() -> { status.setText(success ? "Voiceprint siap ✓" : "Pendaftaran suara perlu diulang"); chat.setText("IMO: " + message); refreshVoiceStatus(); speak(message); }); }
+                    @Override public void onProgress(String message) {
+                        runOnUiThread(() -> status.setText(message));
+                    }
+                    @Override public void onFinished(boolean success, String message) {
+                        encoder.release();
+                        runOnUiThread(() -> { status.setText(success ? "Voiceprint siap ✓" : "Pendaftaran suara perlu diulang"); chat.setText("IMO: " + message); refreshVoiceStatus(); speak(message); });
+                    }
                 });
             } catch (Exception e) { runOnUiThread(() -> { status.setText("Pendaftaran suara perlu diulang"); chat.setText("IMO: Enrollment gagal: " + safe(e.getMessage())); speak("Pendaftaran suara perlu diulang. Silakan coba sekali lagi."); }); }
         }, "IMO-Voice-Setup").start();
