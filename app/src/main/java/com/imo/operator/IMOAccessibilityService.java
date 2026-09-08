@@ -34,16 +34,18 @@ public class IMOAccessibilityService extends AccessibilityService {
         return "Saya membaca layar:\n" + compact;
     }
 
-    /** Exposes a structured UI state for IMO's planner/Brain. */
     public IMOUISnapshot snapshot() { return IMOUISnapshot.capture(this); }
 
     public boolean clickText(String query) {
-        AccessibilityNodeInfo node = find(getRootInActiveWindow(), query);
-        if (node == null) node = findContains(getRootInActiveWindow(), query);
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        AccessibilityNodeInfo node = find(root, query);
+        if (node == null) node = findContains(root, query);
         if (node == null) {
             IMOUISnapshot.Node candidate = snapshot().bestMatch(query);
-            if (candidate != null) node = find(getRootInActiveWindow(), candidate.label());
-            if (node == null && candidate != null) node = findContains(getRootInActiveWindow(), candidate.label());
+            if (candidate != null && !candidate.label().isEmpty()) {
+                node = find(root, candidate.label());
+                if (node == null) node = findContains(root, candidate.label());
+            }
         }
         return clickNode(node);
     }
