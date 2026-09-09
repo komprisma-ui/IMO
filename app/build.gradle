@@ -1,14 +1,38 @@
 plugins { id 'com.android.application' }
+
 android {
     namespace 'com.imo.operator'
     compileSdk 35
+
     defaultConfig {
         applicationId 'com.imo.operator'
         minSdk 23
         targetSdk 35
-        versionCode 5
-        versionName '1.4.0'
-        ndk { abiFilters 'arm64-v8a' }
+        versionCode 6
+        versionName '1.4.1'
+        ndk { abiFilters 'arm64-v8a', 'armeabi-v7a' }
+    }
+
+    signingConfigs {
+        release {
+            def ks = System.getenv('IMO_KEYSTORE')
+            def kp = System.getenv('IMO_KEYSTORE_PASSWORD')
+            def ka = System.getenv('IMO_KEY_ALIAS')
+            def ap = System.getenv('IMO_KEY_PASSWORD')
+            if (ks && kp && ka && ap) {
+                storeFile file(ks)
+                storePassword kp
+                keyAlias ka
+                keyPassword ap
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.release
+        }
     }
 }
 
