@@ -46,21 +46,26 @@ public final class IMOConversationService extends Service implements TextToSpeec
 
     private void startSession(){
         if(running)return;
-        if(!identity.isEnrolled()){speak("Voiceprint belum terdaftar. Silakan daftarkan suara Anda terlebih dahulu.");return;}
+        if(!identity.isEnrolled()){speakAndWait("Voiceprint belum terdaftar. Silakan daftarkan suara Anda terlebih dahulu.",6000);return;}
         try{
             Notification n=buildNotification();
             if(Build.VERSION.SDK_INT>=29)startForeground(NOTIFICATION_ID,n,ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE);
             else startForeground(NOTIFICATION_ID,n);
         }catch(Exception e){stopSelf();return;}
         running=true;
+        // Critical: never start microphone capture while IMO is speaking. Otherwise Whisper can transcribe IMO's own TTS.
+        speakAndWait("Mode dialog HP aktif. Saya siap mendengarkan.",6000);
+        if(!running)return;
         worker=new Thread(this::loop,"IMO-Voice-Operator");
         worker.start();
-        speak("Mode dialog HP aktif. Saya siap mendengarkan.");
     }
 
     private void loop(){
         while(running){
             try{
+                // Keep a hard barrier between TTS output and microphone capture.
+                waitSpeech(10000);
+                if(!running)break;
                 CountDownLatch done=new CountDownLatch(1);
                 final String[] transcript={""};
                 final String[] error={""};
@@ -81,10 +86,9 @@ public final class IMOConversationService extends Service implements TextToSpeec
                 if(!started){Thread.sleep(700);continue;}
 
                 // Never overlap microphone sessions. Capture is 5s and local speaker verification + Whisper may be slow.
-                // Wait up to 45s for the pipeline callback; after that, stop safely rather than opening a second recorder.
                 boolean completed=done.await(45,TimeUnit.SECONDS);
                 if(!completed){
-                    if(running)speak("Pemrosesan suara terlalu lama. Saya menghentikan sesi agar mikrofon tidak macet.");
+                    if(running)speakNatural("Pemrosesan suara terlalu lama. Saya menghentikan sesi agar mikrofon tidak macet.");
                     stopSession();
                     break;
                 }
@@ -99,7 +103,7 @@ public final class IMOConversationService extends Service implements TextToSpeec
                 Thread.currentThread().interrupt();
                 break;
             }catch(Exception e){
-                if(running)speak("Terjadi kendala audio. Saya tetap siap mendengarkan lagi.");
+                if(running)speakNatural("Terjadi kendala audio. Saya tetap siap mendengarkan lagi.");
                 try{Thread.sleep(700);}catch(InterruptedException x){Thread.currentThread().interrupt();break;}
             }
         }
@@ -127,7 +131,7 @@ public final class IMOConversationService extends Service implements TextToSpeec
                 engine.execute(text,new CallbackTts(latch));
                 latch.await(25,TimeUnit.SECONDS);
             }
-        }catch(Exception e){speak("Saya mengalami kendala, tetapi tidak menjalankan tindakan yang tidak pasti.");}
+        }catch(Exception e){speakNatural("Saya mengalami kendala, tetapi tidak menjalankan tindakan yang tidak pasti.");}
     }
 
     private final class CallbackTts implements IMOEngine.Callback{
@@ -142,7 +146,12 @@ public final class IMOConversationService extends Service implements TextToSpeec
         }
     }
 
-    private void speakNatural(String text){if(text==null||text.trim().isEmpty())return;speak(text);waitSpeech(10000);}
+    private void speakNatural(String text){if(text==null||text.trim().isEmpty())return;speakAndWait(text,10000);}
+
+    private void speakAndWait(String text,long max){
+        speak(text);
+        waitSpeech(max);
+    }
 
     private void speak(String text){
         if(tts!=null&&ttsReady&&text!=null&&!text.trim().isEmpty())
