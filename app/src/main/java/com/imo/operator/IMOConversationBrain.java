@@ -1,6 +1,9 @@
 package com.imo.operator;
 
 import android.content.Context;
+import com.komprisma.imo.core.IMOContextMemory;
+import com.komprisma.imo.core.IMOEmotionalState;
+import com.komprisma.imo.core.IMOPersonalityEngine;
 import java.util.ArrayDeque;
 import java.util.Deque;
 
@@ -17,6 +20,9 @@ public final class IMOConversationBrain {
 
     private final IMOAIClient ai;
     private final Deque<String> history = new ArrayDeque<>();
+    private final IMOContextMemory contextMemory = new IMOContextMemory();
+    private final IMOPersonalityEngine personality = new IMOPersonalityEngine();
+    private final com.komprisma.imo.core.IMOEmotionEngine emotion = new com.komprisma.imo.core.IMOEmotionEngine();
     private final int maxTurns = 14;
 
     private static final String SYSTEM =
@@ -44,14 +50,23 @@ public final class IMOConversationBrain {
 
     public synchronized Reply think(String user, String screen) throws Exception {
         if (user == null || user.trim().isEmpty()) return new Reply("Saya mendengarkan. Silakan lanjutkan.", false);
-        history.addLast("USER: " + user.trim());
+        String cleanUser = user.trim();
+        boolean urgent = cleanUser.matches("(?i).*\\b(segera|darurat|urgent|cepat|sekarang juga)\\b.*");
+        boolean ambiguous = cleanUser.matches("(?i).*\\b(itu|yang tadi|di sana|yang ini)\\b.*") && (screen == null || screen.trim().isEmpty());
+        emotion.onUserInput(urgent, ambiguous);
+        contextMemory.add("USER", cleanUser);
+        history.addLast("USER: " + cleanUser);
         trimHistory();
-        if (!ai.configured()) return offline(user);
+        if (!ai.configured()) return offline(cleanUser);
 
         StringBuilder context = new StringBuilder();
         for (String h : history) context.append(h).append('\n');
+        context.append("STATE: ").append(emotion.snapshot()).append('\n');
+        context.append("RECENT CONTEXT: ");
+        for (IMOContextMemory.Event event : contextMemory.recent(6)) context.append(event.kind).append('=').append(event.summary).append("; ");
         String answer = ai.reason(SYSTEM, context.toString(), screen == null ? "" : screen);
         history.addLast("IMO: " + answer);
+        contextMemory.add("IMO", answer);
         trimHistory();
         return parseReply(answer);
     }
@@ -81,17 +96,24 @@ public final class IMOConversationBrain {
             String speech = cleaned.substring(4).trim();
             return new Reply(speech.isEmpty() ? "Saya mendengarkan." : speech, false);
         }
-        // Fail closed: an unstructured model response is never executed as a device action.
         return new Reply(cleaned.isEmpty() ? "Saya belum menerima jawaban yang jelas dari AI." : cleaned, false);
     }
 
     public synchronized void rememberExecution(String text) {
         if (text == null || text.trim().isEmpty()) return;
-        history.addLast("RESULT: " + text.trim());
+        String clean = text.trim();
+        boolean success = clean.matches("(?i).*(berhasil|selesai|terverifikasi|sukses).*" ) && !clean.matches("(?i).*(gagal|tidak berhasil|belum berhasil).*" );
+        if (success) emotion.onTaskSuccess(); else emotion.onTaskFailure();
+        contextMemory.add("RESULT", clean);
+        history.addLast("RESULT: " + clean);
         trimHistory();
     }
 
-    public synchronized void clear() { history.clear(); }
+    public synchronized IMOEmotionalState emotionalState() { return emotion.snapshot(); }
+
+    public synchronized String personalityPrefix() { return personality.prefix(emotion.snapshot()); }
+
+    public synchronized void clear() { history.clear(); contextMemory.clear(); }
     private void trimHistory() { while (history.size() > maxTurns * 2) history.removeFirst(); }
 
     private Reply offline(String user) {
@@ -99,9 +121,9 @@ public final class IMOConversationBrain {
         if (n.contains("siapa kamu") || n.contains("kamu siapa"))
             return new Reply("Saya IMO, operator HP Anda. Saya dapat memahami perintah, membaca layar, dan menjalankan tindakan yang diizinkan.", false);
         if (n.contains("terima kasih") || n.contains("makasih"))
-            return new Reply("Sama-sama. Saya siap melanjutkan.", false);
+            return new Reply("Sama-sama, Ji. Saya siap melanjutkan.", false);
         if (n.contains("halo") || n.equals("hai") || n.equals("hi"))
-            return new Reply("Halo. Saya siap mendengarkan.", false);
+            return new Reply("Halo, Ji. Saya siap mendengarkan.", false);
         if (n.contains("apa yang bisa kamu lakukan"))
             return new Reply("Saya dapat membuka aplikasi, membaca layar, mengetik, menavigasi, mengatur fungsi perangkat, dan menjalankan rangkaian tindakan dengan verifikasi serta konfirmasi untuk tindakan sensitif.", false);
         return new Reply("Saya masih dapat menjalankan perintah lokal, tetapi penalaran bahasa bebas dan konteks mendalam memerlukan AI Cerdas. Silakan konfigurasi AI Cerdas.", false);
