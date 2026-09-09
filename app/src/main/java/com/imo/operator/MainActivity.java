@@ -89,7 +89,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
                 Thread.sleep(2500);
                 IMOSherpaSpeakerEncoder encoder = new IMOSherpaSpeakerEncoder(this);
                 IMOVoiceEnrollment enrollment = new IMOVoiceEnrollment(encoder, voiceIdentity);
-                enrollment.enroll(3, 4000, new IMOVoiceEnrollment.Callback() {
+                enrollment.enroll(3, 5000, new IMOVoiceEnrollment.Callback() {
                     @Override public void onProgress(String message) { runOnUiThread(() -> status.setText(message)); }
                     @Override public void onFinished(boolean success, String message) {
                         encoder.release();
