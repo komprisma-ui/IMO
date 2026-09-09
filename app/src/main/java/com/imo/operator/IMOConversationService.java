@@ -46,7 +46,6 @@ public final class IMOConversationService extends Service implements TextToSpeec
 
     private void startSession(){
         if(running)return;
-        if(!identity.isEnrolled()){speakAndWait("Voiceprint belum terdaftar. Silakan daftarkan suara Anda terlebih dahulu.",6000);return;}
         try{
             Notification n=buildNotification();
             if(Build.VERSION.SDK_INT>=29)startForeground(NOTIFICATION_ID,n,ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE);
@@ -69,6 +68,7 @@ public final class IMOConversationService extends Service implements TextToSpeec
                 CountDownLatch done=new CountDownLatch(1);
                 final String[] transcript={""};
                 final String[] error={""};
+                // Speaker identity is intentionally not used: any person may speak to IMO.
                 IMOVoiceCommandPipeline p=new IMOVoiceCommandPipeline(this,identity,.72f);
                 boolean started=p.start(5000,new IMOVoiceCommandPipeline.Callback(){
                     public void onState(String m){}
@@ -85,7 +85,6 @@ public final class IMOConversationService extends Service implements TextToSpeec
                 });
                 if(!started){Thread.sleep(700);continue;}
 
-                // Never overlap microphone sessions. Capture is 5s and local speaker verification + Whisper may be slow.
                 boolean completed=done.await(45,TimeUnit.SECONDS);
                 if(!completed){
                     if(running)speakNatural("Pemrosesan suara terlalu lama. Saya menghentikan sesi agar mikrofon tidak macet.");
