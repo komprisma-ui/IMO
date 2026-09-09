@@ -43,21 +43,21 @@ jobs:
           curl -fL --retry 4 --retry-all-errors -o app/src/main/assets/3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx
           echo "f682b514c05d947ee3fa91cd6ec6c5c7543479a128373fa29b1faedccd21fd11  app/src/main/assets/3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx" | sha256sum -c -
 
-      - name: Fetch pinned multilingual Whisper ASR model
+      - name: Fetch higher-accuracy multilingual Whisper ASR model
         shell: bash
         run: |
           set -euo pipefail
-          tmp="/tmp/whisper-tiny.tar.bz2"
-          curl -fL --retry 4 --retry-all-errors -o "$tmp" https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-tiny.tar.bz2
-          mkdir -p /tmp/whisper-tiny
-          tar -xjf "$tmp" -C /tmp/whisper-tiny
-          model_dir="$(find /tmp/whisper-tiny -maxdepth 1 -type d -name 'sherpa-onnx-whisper-tiny*' | head -n 1)"
+          tmp="/tmp/whisper-base.tar.bz2"
+          curl -fL --retry 4 --retry-all-errors -o "$tmp" https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-base.tar.bz2
+          mkdir -p /tmp/whisper-base
+          tar -xjf "$tmp" -C /tmp/whisper-base
+          model_dir="$(find /tmp/whisper-base -maxdepth 1 -type d -name 'sherpa-onnx-whisper-base*' | head -n 1)"
           test -n "$model_dir"
-          mkdir -p app/src/main/assets/asr/whisper-tiny
-          cp "$model_dir/tiny-encoder.int8.onnx" app/src/main/assets/asr/whisper-tiny/
-          cp "$model_dir/tiny-decoder.int8.onnx" app/src/main/assets/asr/whisper-tiny/
-          cp "$model_dir/tiny-tokens.txt" app/src/main/assets/asr/whisper-tiny/
-          sha256sum app/src/main/assets/asr/whisper-tiny/*
+          mkdir -p app/src/main/assets/asr/whisper-base
+          cp "$model_dir/base-encoder.int8.onnx" app/src/main/assets/asr/whisper-base/
+          cp "$model_dir/base-decoder.int8.onnx" app/src/main/assets/asr/whisper-base/
+          cp "$model_dir/base-tokens.txt" app/src/main/assets/asr/whisper-base/
+          sha256sum app/src/main/assets/asr/whisper-base/*
 
       - name: Build install-ready release APK
         run: gradle assembleRelease --stacktrace
