@@ -43,7 +43,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
     @Override protected void onResume() {
         super.onResume();
         if (confirmation == null) confirmation = new IMOConfirmation();
-        engine = new IMOEngine(this, IMOAccessibilityService.instance, confirmation); refreshVoiceStatus();
+        engine = new IMOEngine(IMOAccessibilityService.instance, confirmation, this); refreshVoiceStatus();
     }
 
     @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
@@ -155,7 +155,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
     }
 
     private void executePlannedCommand(String plannerInput) {
-        engine = new IMOEngine(this, IMOAccessibilityService.instance, confirmation);
+        engine = new IMOEngine(IMOAccessibilityService.instance, confirmation, this);
         engine.execute(plannerInput, new IMOEngine.Callback() {
             @Override public void onProgress(String message) { runOnUiThread(() -> status.setText(message)); }
             @Override public void onConfirmationRequired(String message) { runOnUiThread(() -> { memory.remember(plannerInput, message); status.setText("Menunggu konfirmasi"); chat.setText("IMO: " + message); speak(message); }); }
