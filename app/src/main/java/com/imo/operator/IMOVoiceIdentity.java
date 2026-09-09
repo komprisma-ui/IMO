@@ -16,12 +16,15 @@ import javax.crypto.spec.GCMParameterSpec;
 /** Local voice identity. Only the embedding is stored; raw microphone audio is never persisted. */
 public final class IMOVoiceIdentity {
     private static final String PREF = "imo_voice_identity";
-    private static final String KEY_EMBEDDING = "embedding_v3";
+    private static final String KEY_EMBEDDING = "embedding_v4";
     private static final String KEY_LEGACY = "embedding";
     private static final String KEY_SLOT = "crypto_slot";
-    private static final String ALIAS_256 = "IMO_VOICE_IDENTITY_AES_V3_256";
-    private static final String ALIAS_128 = "IMO_VOICE_IDENTITY_AES_V3_128";
-    private static final String OLD_ALIAS = "IMO_VOICE_IDENTITY_AES";
+    private static final String ALIAS = "IMO_VOICE_IDENTITY_AES_GCM_V4";
+    private static final String[] COMPAT_ALIASES = {
+            "IMO_VOICE_IDENTITY_AES_V3_128",
+            "IMO_VOICE_IDENTITY_AES_V3_256",
+            "IMO_VOICE_IDENTITY_AES"
+    };
     private static final String TRANSFORMATION = "AES/GCM/NoPadding";
     private final SharedPreferences prefs;
     private final SecureRandom random = new SecureRandom();
@@ -31,24 +34,23 @@ public final class IMOVoiceIdentity {
     }
 
     public synchronized void enroll(float[] embedding) {
-        if (!valid(embedding)) throw new IllegalArgumentException("Invalid voice embedding");
+        if (!valid(embedding)) throw new IllegalArgumentException("Voice embedding tidak valid");
         byte[] plain = toBytes(embedding);
-        Exception first = null;
-        try {
-            byte[] packed = encrypt(plain, ALIAS_256, 256, true);
-            save(packed, "256");
-            return;
-        } catch (Exception e) { first = e; }
-        try {
-            // Compatibility path for OEM Android Keystore implementations that reject AES-256.
-            byte[] packed = encrypt(plain, ALIAS_128, 128, true);
-            save(packed, "128");
-            return;
-        } catch (Exception second) {
-            String a = first == null ? "" : first.getClass().getSimpleName();
-            String b = second.getClass().getSimpleName();
-            throw new IllegalStateException("Voice identity encryption unavailable (AES-256=" + a + ", AES-128=" + b + ")", second);
+        Exception failure = null;
+        // Android 11/OEM compatibility: use AES-128-GCM as the primary Keystore format.
+        for (int attempt = 0; attempt < 2; attempt++) {
+            try {
+                if (attempt == 1) deleteAlias(ALIAS);
+                byte[] packed = encrypt(plain, getOrCreateKey(ALIAS));
+                save(packed);
+                float[] check = decrypt(packed, ALIAS);
+                if (check == null || cosineSimilarity(embedding, check) < 0.999f)
+                    throw new IllegalStateException("read-back voiceprint tidak cocok");
+                return;
+            } catch (Exception e) { failure = e; }
         }
+        String detail = failure == null ? "kesalahan tidak diketahui" : rootMessage(failure);
+        throw new IllegalStateException("Tidak dapat mengamankan voice identity dengan Android Keystore: " + detail, failure);
     }
 
     public synchronized boolean isEnrolled() { return load() != null; }
@@ -58,16 +60,16 @@ public final class IMOVoiceIdentity {
         if (!encoded.isEmpty()) {
             try {
                 byte[] packed = Base64.decode(encoded, Base64.NO_WRAP);
-                String slot = prefs.getString(KEY_SLOT, "");
-                float[] result = tryDecrypt(packed, slot.equals("128") ? ALIAS_128 : ALIAS_256);
+                float[] result = decrypt(packed, ALIAS);
                 if (result != null) return result;
-                if (!slot.equals("128")) {
-                    result = tryDecrypt(packed, ALIAS_128);
-                    if (result != null) return result;
+                for (String oldAlias : COMPAT_ALIASES) {
+                    result = decrypt(packed, oldAlias);
+                    if (result != null) {
+                        // Re-protect old profiles using the current stable format.
+                        try { enroll(result); } catch (Exception ignored) { }
+                        return result;
+                    }
                 }
-                // Read profiles created by the previous implementation.
-                result = tryDecrypt(packed, OLD_ALIAS);
-                if (result != null) return result;
             } catch (Exception ignored) { }
             return null;
         }
@@ -75,10 +77,24 @@ public final class IMOVoiceIdentity {
     }
 
     public synchronized void clear() {
-        prefs.edit().remove(KEY_EMBEDDING).remove(KEY_LEGACY).remove(KEY_SLOT).apply();
-        deleteAlias(ALIAS_256);
-        deleteAlias(ALIAS_128);
-        // Keep the legacy alias unless it is clearly broken; old profiles may still need it.
+        prefs.edit().remove(KEY_EMBEDDING).remove(KEY_LEGACY).remove(KEY_SLOT).commit();
+        deleteAlias(ALIAS);
+        for (String alias : COMPAT_ALIASES) deleteAlias(alias);
+    }
+
+    /** Self-test used by diagnostics; does not store a real voice sample. */
+    public synchronized String selfTest() {
+        try {
+            SecretKey key = getOrCreateKey(ALIAS);
+            byte[] probe = new byte[]{73,77,79,1,7,9,11,13};
+            byte[] packed = encrypt(probe, key);
+            byte[] roundTrip = decryptBytes(packed, ALIAS);
+            if (roundTrip == null || roundTrip.length != probe.length) return "Keystore read-back gagal";
+            for (int i = 0; i < probe.length; i++) if (probe[i] != roundTrip[i]) return "Keystore integrity check gagal";
+            return "OK";
+        } catch (Exception e) {
+            return rootMessage(e);
+        }
     }
 
     public static float cosineSimilarity(float[] a, float[] b) {
@@ -89,27 +105,22 @@ public final class IMOVoiceIdentity {
         return (float)(dot / (Math.sqrt(aa) * Math.sqrt(bb)));
     }
 
-    private byte[] encrypt(byte[] plain, String alias, int keySize, boolean repairBrokenKey) throws Exception {
-        Exception failure = null;
-        for (int attempt = 0; attempt < (repairBrokenKey ? 2 : 1); attempt++) {
-            try {
-                SecretKey key = getOrCreateKey(alias, keySize);
-                byte[] iv = new byte[12]; random.nextBytes(iv);
-                Cipher cipher = Cipher.getInstance(TRANSFORMATION);
-                cipher.init(Cipher.ENCRYPT_MODE, key, new GCMParameterSpec(128, iv));
-                byte[] encrypted = cipher.doFinal(plain);
-                ByteBuffer out = ByteBuffer.allocate(4 + iv.length + encrypted.length);
-                out.putInt(iv.length).put(iv).put(encrypted);
-                return out.array();
-            } catch (Exception e) {
-                failure = e;
-                if (attempt == 0) deleteAlias(alias);
-            }
-        }
-        throw failure == null ? new IllegalStateException("encryption failed") : failure;
+    private byte[] encrypt(byte[] plain, SecretKey key) throws Exception {
+        byte[] iv = new byte[12]; random.nextBytes(iv);
+        Cipher cipher = Cipher.getInstance(TRANSFORMATION);
+        cipher.init(Cipher.ENCRYPT_MODE, key, new GCMParameterSpec(128, iv));
+        byte[] encrypted = cipher.doFinal(plain);
+        ByteBuffer out = ByteBuffer.allocate(4 + iv.length + encrypted.length);
+        out.putInt(iv.length).put(iv).put(encrypted);
+        return out.array();
     }
 
-    private float[] tryDecrypt(byte[] packed, String alias) {
+    private float[] decrypt(byte[] packed, String alias) {
+        byte[] bytes = decryptBytes(packed, alias);
+        return fromBytes(bytes);
+    }
+
+    private byte[] decryptBytes(byte[] packed, String alias) {
         try {
             if (packed == null || packed.length < 20) return null;
             ByteBuffer in = ByteBuffer.wrap(packed);
@@ -121,17 +132,17 @@ public final class IMOVoiceIdentity {
             if (key == null) return null;
             Cipher cipher = Cipher.getInstance(TRANSFORMATION);
             cipher.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(128, iv));
-            return fromBytes(cipher.doFinal(encrypted));
+            return cipher.doFinal(encrypted);
         } catch (Exception ignored) { return null; }
     }
 
-    private void save(byte[] packed, String slot) {
+    private void save(byte[] packed) {
         boolean committed = prefs.edit()
                 .putString(KEY_EMBEDDING, Base64.encodeToString(packed, Base64.NO_WRAP))
-                .putString(KEY_SLOT, slot)
+                .putString(KEY_SLOT, "aes128-gcm-v4")
                 .remove(KEY_LEGACY)
                 .commit();
-        if (!committed) throw new IllegalStateException("Voice identity could not be committed to local storage");
+        if (!committed) throw new IllegalStateException("SharedPreferences commit gagal");
     }
 
     private float[] migrateLegacy() {
@@ -146,14 +157,14 @@ public final class IMOVoiceIdentity {
         } catch (Exception e) { return null; }
     }
 
-    private SecretKey getOrCreateKey(String alias, int keySize) throws Exception {
+    private SecretKey getOrCreateKey(String alias) throws Exception {
         SecretKey existing = getExistingKey(alias);
         if (existing != null) return existing;
         KeyGenerator generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore");
         generator.init(new KeyGenParameterSpec.Builder(alias, KeyProperties.PURPOSE_ENCRYPT | KeyProperties.PURPOSE_DECRYPT)
                 .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
                 .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                .setKeySize(keySize)
+                .setKeySize(128)
                 .build());
         return generator.generateKey();
     }
@@ -168,8 +179,7 @@ public final class IMOVoiceIdentity {
 
     private void deleteAlias(String alias) {
         try {
-            KeyStore ks = KeyStore.getInstance("AndroidKeyStore");
-            ks.load(null);
+            KeyStore ks = KeyStore.getInstance("AndroidKeyStore"); ks.load(null);
             if (ks.containsAlias(alias)) ks.deleteEntry(alias);
         } catch (Exception ignored) { }
     }
@@ -182,8 +192,7 @@ public final class IMOVoiceIdentity {
 
     private static float[] fromBytes(byte[] bytes) {
         if (bytes == null || bytes.length % 4 != 0) return null;
-        float[] v = new float[bytes.length / 4];
-        ByteBuffer b = ByteBuffer.wrap(bytes);
+        float[] v = new float[bytes.length / 4]; ByteBuffer b = ByteBuffer.wrap(bytes);
         for (int i = 0; i < v.length; i++) v[i] = b.getFloat();
         return valid(v) ? v : null;
     }
@@ -192,5 +201,13 @@ public final class IMOVoiceIdentity {
         if (v == null || v.length < 8) return false;
         for (float x : v) if (Float.isNaN(x) || Float.isInfinite(x)) return false;
         return true;
+    }
+
+    private static String rootMessage(Throwable t) {
+        Throwable cur = t; String last = null;
+        for (int i = 0; i < 6 && cur != null; i++, cur = cur.getCause()) {
+            if (cur.getMessage() != null && !cur.getMessage().trim().isEmpty()) last = cur.getMessage();
+        }
+        return last == null ? t.getClass().getSimpleName() : last;
     }
 }
