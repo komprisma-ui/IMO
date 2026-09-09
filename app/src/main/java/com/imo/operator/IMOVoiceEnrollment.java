@@ -14,9 +14,9 @@ public final class IMOVoiceEnrollment {
 
     private static final int MIN_SAMPLES = 3;
     private static final int MAX_ATTEMPTS_PER_SAMPLE = 3;
-    private static final long TTS_GUARD_MS = 3500L;
-    private static final double MIN_RMS = 0.0025;
-    private static final int MIN_SPEECH_SAMPLES = 8000; // 0.5 s at 16 kHz
+    private static final long TTS_GUARD_MS = 1200L;
+    private static final double MIN_RMS = 0.0018;
+    private static final int MIN_SPEECH_SAMPLES = 4000; // 0.25 s at 16 kHz
     private final IMOSpeakerEncoder encoder;
     private final IMOVoiceIdentity identity;
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -28,7 +28,7 @@ public final class IMOVoiceEnrollment {
 
     public void enroll(int sampleCount, long clipMs, Callback callback) {
         if (encoder == null) {
-            callback.onFinished(false, "Model verifikasi suara belum tersedia. IMO tidak mengaktifkan voice lock secara palsu.");
+            callback.onFinished(false, "Model verifikasi suara belum tersedia. Voice lock tidak diaktifkan secara palsu.");
             return;
         }
         if (sampleCount < MIN_SAMPLES || clipMs < 3000) {
@@ -41,17 +41,25 @@ public final class IMOVoiceEnrollment {
                 for (int i = 0; i < sampleCount; i++) {
                     int number = i + 1;
                     boolean captured = false;
-                    String lastDiagnostic = "suara tidak cukup jelas";
+                    String lastDiagnostic = "audio belum terbaca";
                     for (int attempt = 1; attempt <= MAX_ATTEMPTS_PER_SAMPLE && !captured; attempt++) {
-                        post(callback, "Sampel " + number + " dari " + sampleCount + " — setelah suara IMO berhenti, ucapkan kalimat pendek dengan alami.");
+                        post(callback, "Sampel " + number + " dari " + sampleCount + " — ucapkan kalimat pendek setelah instruksi selesai.");
                         Thread.sleep(TTS_GUARD_MS);
-                        short[] pcm = IMOAudioRecorder.record(clipMs);
+                        short[] pcm;
+                        try {
+                            pcm = IMOAudioRecorder.record(clipMs);
+                        } catch (Exception audioError) {
+                            lastDiagnostic = safe(audioError.getMessage());
+                            if (attempt < MAX_ATTEMPTS_PER_SAMPLE) {
+                                post(callback, "Mikrofon belum siap: " + lastDiagnostic + ". Saya mencoba jalur mikrofon lain…");
+                            }
+                            continue;
+                        }
                         VoiceQuality quality = assess(pcm);
                         if (!quality.usable) {
                             lastDiagnostic = quality.message;
-                            if (attempt < MAX_ATTEMPTS_PER_SAMPLE) {
+                            if (attempt < MAX_ATTEMPTS_PER_SAMPLE)
                                 post(callback, "Sampel " + number + " belum terbaca: " + quality.message + ". Ulangi (" + (attempt + 1) + "/" + MAX_ATTEMPTS_PER_SAMPLE + ").");
-                            }
                             continue;
                         }
                         short[] speech = trimSilence(pcm, quality.rms);
@@ -63,22 +71,25 @@ public final class IMOVoiceEnrollment {
                         captured = true;
                     }
                     if (!captured) {
-                        postFinish(callback, false, "Sampel " + number + " gagal dibaca setelah 3 percobaan: " + lastDiagnostic + ". Pastikan izin mikrofon aktif, dekatkan ponsel, dan gunakan ruangan tenang.");
+                        postFinish(callback, false, "Sampel " + number + " belum dapat dibaca: " + lastDiagnostic + ". Pastikan izin mikrofon aktif, tidak ada panggilan/rekaman lain yang memakai mikrofon, lalu coba lagi.");
                         return;
                     }
                 }
                 float[] profile = normalize(average(embeddings));
+                post(callback, "Semua sampel terbaca. Mengamankan voiceprint di perangkat…");
                 identity.enroll(profile);
-                // Confirm that the encrypted profile can immediately be read back.
                 float[] stored = identity.load();
                 if (stored == null || stored.length != profile.length)
-                    throw new IllegalStateException("Profil suara tersimpan tetapi tidak dapat diverifikasi kembali");
-                postFinish(callback, true, "Berhasil. 3 sampel suara terbaca dan voiceprint terenkripsi sudah tersimpan di perangkat.");
+                    throw new IllegalStateException("Voiceprint tersimpan tetapi read-back verification gagal");
+                float similarity = IMOVoiceIdentity.cosineSimilarity(profile, stored);
+                if (similarity < 0.99f)
+                    throw new IllegalStateException("Voiceprint tersimpan tetapi integritas profil tidak cocok");
+                postFinish(callback, true, "Berhasil. 3 sampel suara terbaca, voiceprint terenkripsi tersimpan, dan verifikasi penyimpanan berhasil.");
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 postFinish(callback, false, "Pendaftaran suara dihentikan.");
             } catch (Exception e) {
-                postFinish(callback, false, "Pendaftaran suara gagal: " + safe(e.getMessage()) + ". Coba lagi setelah memastikan mikrofon tidak sedang dipakai aplikasi lain.");
+                postFinish(callback, false, "Pendaftaran suara gagal pada tahap penyimpanan/validasi: " + safe(e.getMessage()) + ".");
             }
         }, "IMO-Voice-Enrollment").start();
     }
@@ -88,18 +99,17 @@ public final class IMOVoiceEnrollment {
         double sum = 0;
         int peak = 0;
         int nonSilent = 0;
-        // RMS over the complete capture is intentionally tolerant; speech presence is estimated separately.
         for (short sample : pcm) {
             int a = Math.abs((int) sample);
             peak = Math.max(peak, a);
             double x = sample / 32768.0;
             sum += x * x;
-            if (Math.abs(x) >= 0.004) nonSilent++;
+            if (Math.abs(x) >= 0.0025) nonSilent++;
         }
         double rms = Math.sqrt(sum / pcm.length);
         double speechRatio = (double) nonSilent / pcm.length;
-        if (peak < 300 || rms < MIN_RMS || nonSilent < MIN_SPEECH_SAMPLES || speechRatio < 0.01)
-            return new VoiceQuality(false, rms, "ucapan terlalu pelan atau mikrofon tidak menangkap suara");
+        if (peak < 150 || rms < MIN_RMS || nonSilent < MIN_SPEECH_SAMPLES || speechRatio < 0.008)
+            return new VoiceQuality(false, rms, "suara terlalu pelan atau input mikrofon kosong");
         if (peak > 32700 && speechRatio > 0.75)
             return new VoiceQuality(false, rms, "sinyal mikrofon terlalu keras/terdistorsi");
         return new VoiceQuality(true, rms, "ok");
@@ -107,8 +117,7 @@ public final class IMOVoiceEnrollment {
 
     private static short[] trimSilence(short[] pcm, double rms) {
         if (pcm == null || pcm.length == 0) return pcm;
-        // Adaptive threshold: never make a quiet but valid voice fail because of a fixed amplitude floor.
-        double threshold = Math.max(0.0035, Math.min(0.012, rms * 0.35));
+        double threshold = Math.max(0.002, Math.min(0.010, rms * 0.30));
         int first = 0, last = pcm.length - 1;
         while (first < pcm.length && Math.abs(pcm[first] / 32768.0) < threshold) first++;
         while (last > first && Math.abs(pcm[last] / 32768.0) < threshold) last--;
