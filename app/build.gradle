@@ -13,25 +13,13 @@ android {
         ndk { abiFilters 'arm64-v8a', 'armeabi-v7a' }
     }
 
-    signingConfigs {
-        release {
-            def ks = System.getenv('IMO_KEYSTORE')
-            def kp = System.getenv('IMO_KEYSTORE_PASSWORD')
-            def ka = System.getenv('IMO_KEY_ALIAS')
-            def ap = System.getenv('IMO_KEY_PASSWORD')
-            if (ks && kp && ka && ap) {
-                storeFile file(ks)
-                storePassword kp
-                keyAlias ka
-                keyPassword ap
-            }
-        }
-    }
-
     buildTypes {
         release {
             minifyEnabled false
-            signingConfig signingConfigs.release
+            // Use the standard Android debug key only as a temporary installer key.
+            // This makes the APK a normal release package (not testOnly) while avoiding
+            // embedding a private production keystore in the public repository.
+            signingConfig signingConfigs.debug
         }
     }
 }
