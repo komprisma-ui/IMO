@@ -17,6 +17,8 @@ import java.util.Set;
 
 /** IMO operator UI: local speaker lock, local ASR, task execution, confirmation and memory. */
 public class MainActivity extends Activity implements TextToSpeech.OnInitListener {
+    private static final int REQ_AUDIO = 10;
+    private static final int REQ_DEVICE = 11;
     private TextView status, chat, voiceStatus;
     private Button mic;
     private TextToSpeech tts;
@@ -25,26 +27,45 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
     private IMOMemory memory;
     private IMOVoiceIdentity voiceIdentity;
     private volatile boolean voiceBusy;
+    private String pendingCommand;
+    private boolean pendingCameraPermission;
+    private boolean pendingCallPermission;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state); buildUi();
         memory = new IMOMemory(this); confirmation = new IMOConfirmation(); voiceIdentity = new IMOVoiceIdentity(this);
         tts = new TextToSpeech(this, this);
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED)
-            requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, 10);
+            requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_AUDIO);
         refreshVoiceStatus();
     }
 
     @Override protected void onResume() {
         super.onResume();
         if (confirmation == null) confirmation = new IMOConfirmation();
-        engine = new IMOEngine(IMOAccessibilityService.instance, confirmation); refreshVoiceStatus();
+        engine = new IMOEngine(IMOAccessibilityService.instance, confirmation, this); refreshVoiceStatus();
+    }
+
+    @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode != REQ_DEVICE || pendingCommand == null) return;
+        boolean cameraOk = !pendingCameraPermission || checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED;
+        boolean callOk = !pendingCallPermission || checkSelfPermission(Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED;
+        String command = pendingCommand;
+        pendingCommand = null; pendingCameraPermission = false; pendingCallPermission = false;
+        if (!cameraOk || !callOk) {
+            status.setText("Izin perangkat belum diberikan.");
+            chat.setText("IMO: Saya memerlukan izin yang relevan untuk menjalankan perintah ini.");
+            speak("Izin perangkat belum diberikan. Saya tidak akan memaksa melewati keamanan Android.");
+            return;
+        }
+        executePlannedCommand(command);
     }
 
     private void buildUi() {
         LinearLayout root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setPadding(32,40,32,30);
         TextView title = new TextView(this); title.setText("IMO"); title.setTextSize(34); title.setGravity(Gravity.CENTER); root.addView(title);
-        TextView subtitle = new TextView(this); subtitle.setText("Intelligent Mobile Operator"); subtitle.setGravity(Gravity.CENTER); root.addView(subtitle);
+        TextView subtitle = new TextView(this); subtitle.setText("Intelligent Mobile Operator • JARVIS Core"); subtitle.setGravity(Gravity.CENTER); root.addView(subtitle);
         status = new TextView(this); status.setText("Siap. Saya menunggu perintah ji."); status.setTextSize(17); status.setPadding(0,25,0,20); root.addView(status);
         chat = new TextView(this); chat.setText("IMO: Siap membantu."); chat.setTextSize(18); root.addView(chat);
         voiceStatus = new TextView(this); voiceStatus.setTextSize(15); voiceStatus.setPadding(0,15,0,10); root.addView(voiceStatus);
@@ -60,7 +81,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
     }
 
     private void enrollVoice() {
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) { requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, 10); return; }
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) { requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_AUDIO); return; }
         status.setText("Siap. Ikuti instruksi dengan suara alami.");
         speak("Baik. Mari kita daftarkan suara Anda. Setelah saya selesai berbicara, silakan ucapkan secara alami.");
         new Thread(() -> {
@@ -69,9 +90,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
                 IMOSherpaSpeakerEncoder encoder = new IMOSherpaSpeakerEncoder(this);
                 IMOVoiceEnrollment enrollment = new IMOVoiceEnrollment(encoder, voiceIdentity);
                 enrollment.enroll(3, 4000, new IMOVoiceEnrollment.Callback() {
-                    @Override public void onProgress(String message) {
-                        runOnUiThread(() -> status.setText(message));
-                    }
+                    @Override public void onProgress(String message) { runOnUiThread(() -> status.setText(message)); }
                     @Override public void onFinished(boolean success, String message) {
                         encoder.release();
                         runOnUiThread(() -> { status.setText(success ? "Voiceprint siap ✓" : "Pendaftaran suara perlu diulang"); chat.setText("IMO: " + message); refreshVoiceStatus(); speak(message); });
@@ -85,7 +104,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
     private void listen() {
         if (voiceBusy) return;
         if (!voiceIdentity.isEnrolled()) { status.setText("Voiceprint belum terdaftar. Daftarkan suara terlebih dahulu."); speak("Silakan daftarkan suara Anda terlebih dahulu."); return; }
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) { requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, 10); return; }
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) { requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO}, REQ_AUDIO); return; }
         voiceBusy = true; mic.setText("🔐 MENDENGARKAN & MEMERIKSA…");
         IMOVoiceCommandPipeline pipeline = new IMOVoiceCommandPipeline(this, voiceIdentity, 0.72f);
         boolean started;
@@ -98,14 +117,49 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         if (!started) { voiceBusy = false; mic.setText("🎙 MULAI BICARA"); status.setText("Tidak dapat memulai pipeline suara."); }
     }
 
+    /** Jarvis-style front door: understand, assess risk, normalize, request only needed permissions, then execute. */
     private void command(String input) {
         final String clean = input == null ? "" : input.trim(); if (clean.isEmpty()) return;
-        chat.setText("Anda: " + clean + "\nIMO: Saya memahami perintahnya dan mulai bekerja…"); status.setText("Memproses…");
-        engine = new IMOEngine(IMOAccessibilityService.instance, confirmation);
-        engine.execute(clean, new IMOEngine.Callback() {
+        IMOJarvisCore.Decision decision = IMOJarvisCore.understand(clean);
+        IMOActionPolicy.Assessment risk = IMOActionPolicy.assess(clean);
+        if (decision.intent == IMOJarvisCore.Intent.NONE && decision.confidence < .55f) {
+            chat.setText("Anda: " + clean + "\nIMO: Saya belum cukup yakin memahami maksudnya.");
+            status.setText("Perlu klarifikasi");
+            speak("Saya belum cukup yakin dengan maksud perintah itu. Tolong jelaskan sedikit lagi.");
+            memory.remember(clean, "Klarifikasi diperlukan");
+            return;
+        }
+        String plannerInput = IMOJarvisCore.normalizeForPlanner(clean);
+        String riskText = risk.risk == IMOActionPolicy.Risk.LOW ? "" : " • Risiko " + risk.risk;
+        chat.setText("Anda: " + clean + "\nIMO: Dipahami (" + Math.round(decision.confidence * 100) + "%)" + riskText + ". Mulai bekerja…");
+        status.setText("Menganalisis tujuan dan menyusun langkah…");
+        executeWithRequiredPermissions(plannerInput);
+    }
+
+    private void executeWithRequiredPermissions(String plannerInput) {
+        boolean needsCamera = plannerInput.toLowerCase(Locale.ROOT).contains("senter") || plannerInput.toLowerCase(Locale.ROOT).contains("flashlight") || plannerInput.toLowerCase(Locale.ROOT).contains("torch");
+        boolean needsCall = plannerInput.toLowerCase(Locale.ROOT).startsWith("panggil ") || plannerInput.toLowerCase(Locale.ROOT).startsWith("telepon ") || plannerInput.toLowerCase(Locale.ROOT).startsWith("call ");
+        pendingCommand = plannerInput; pendingCameraPermission = needsCamera; pendingCallPermission = needsCall;
+        if (needsCamera && checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            status.setText("Meminta izin kamera untuk mengendalikan lampu senter…");
+            requestPermissions(new String[]{Manifest.permission.CAMERA}, REQ_DEVICE);
+            return;
+        }
+        if (needsCall && checkSelfPermission(Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) {
+            status.setText("Meminta izin telepon untuk menjalankan panggilan…");
+            requestPermissions(new String[]{Manifest.permission.CALL_PHONE}, REQ_DEVICE);
+            return;
+        }
+        pendingCommand = null; pendingCameraPermission = false; pendingCallPermission = false;
+        executePlannedCommand(plannerInput);
+    }
+
+    private void executePlannedCommand(String plannerInput) {
+        engine = new IMOEngine(IMOAccessibilityService.instance, confirmation, this);
+        engine.execute(plannerInput, new IMOEngine.Callback() {
             @Override public void onProgress(String message) { runOnUiThread(() -> status.setText(message)); }
-            @Override public void onConfirmationRequired(String message) { memory.remember(clean, message); runOnUiThread(() -> { status.setText("Menunggu konfirmasi"); chat.setText("Anda: " + clean + "\nIMO: " + message); speak(message); }); }
-            @Override public void onFinished(String message, boolean success) { memory.remember(clean, message); runOnUiThread(() -> { status.setText(success ? "Selesai ✓" : "Belum selesai"); chat.setText("Anda: " + clean + "\nIMO: " + message); speak(message); }); }
+            @Override public void onConfirmationRequired(String message) { runOnUiThread(() -> { memory.remember(plannerInput, message); status.setText("Menunggu konfirmasi"); chat.setText("IMO: " + message); speak(message); }); }
+            @Override public void onFinished(String message, boolean success) { memory.remember(plannerInput, message); runOnUiThread(() -> { status.setText(success ? "Selesai ✓" : "Belum selesai"); chat.setText("IMO: " + message); speak(message); }); }
         });
     }
 
