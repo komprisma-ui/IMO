@@ -22,15 +22,12 @@ public final class IMODeviceController {
     public static boolean wakeScreen(Context context) {
         try {
             PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
-            if (pm == null) return false;
-            if (Build.VERSION.SDK_INT >= 21) {
-                PowerManager.WakeLock wl = pm.newWakeLock(PowerManager.SCREEN_BRIGHT_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP, "IMO:WakeScreen");
-                wl.acquire(1500L);
-                wl.release();
-                return true;
-            }
-        } catch (Exception ignored) {}
-        return false;
+            if (pm == null || Build.VERSION.SDK_INT < 21) return false;
+            PowerManager.WakeLock wl = pm.newWakeLock(PowerManager.SCREEN_BRIGHT_WAKE_LOCK | PowerManager.ACQUIRE_CAUSES_WAKEUP, "IMO:WakeScreen");
+            wl.acquire(1500L);
+            wl.release();
+            return true;
+        } catch (Exception ignored) { return false; }
     }
 
     public static boolean setTorch(Context context, boolean enabled) {
@@ -41,10 +38,9 @@ public final class IMODeviceController {
             String chosen = null;
             for (String id : cm.getCameraIdList()) {
                 CameraCharacteristics c = cm.getCameraCharacteristics(id);
-                Boolean flash = c.get(CameraCharacteristics.FLASH_INFO_AVAILABLE);
-                Integer facing = c.get(CameraCharacteristics.LENS_FACING);
-                if (Boolean.TRUE.equals(flash)) {
+                if (Boolean.TRUE.equals(c.get(CameraCharacteristics.FLASH_INFO_AVAILABLE))) {
                     chosen = id;
+                    Integer facing = c.get(CameraCharacteristics.LENS_FACING);
                     if (facing != null && facing == CameraCharacteristics.LENS_FACING_BACK) break;
                 }
             }
@@ -58,12 +54,10 @@ public final class IMODeviceController {
         try { context.startActivity(new Intent(Settings.ACTION_WIFI_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); return true; }
         catch (Exception e) { return false; }
     }
-
     public static boolean openBluetoothSettings(Context context) {
         try { context.startActivity(new Intent(Settings.ACTION_BLUETOOTH_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); return true; }
         catch (Exception e) { return false; }
     }
-
     public static boolean setVolume(Context context, int stream, int direction) {
         try {
             AudioManager am = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
@@ -72,16 +66,13 @@ public final class IMODeviceController {
             return true;
         } catch (Exception e) { return false; }
     }
-
     public static boolean call(Context context, String number) {
         if (number == null || number.trim().isEmpty()) return false;
         try {
             Intent i = new Intent(Intent.ACTION_CALL, Uri.parse("tel:" + Uri.encode(number.trim()))).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-            context.startActivity(i);
-            return true;
+            context.startActivity(i); return true;
         } catch (Exception e) { return false; }
     }
-
     public static boolean openSystemSettings(Context context) {
         try { context.startActivity(new Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); return true; }
         catch (Exception e) { return false; }
