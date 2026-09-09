@@ -80,17 +80,18 @@ public final class IMOConversationService extends Service implements TextToSpeec
                 });
                 if(!started){Thread.sleep(700);continue;}
 
-                // Capture is 5s and speaker verification + Whisper can take several seconds on-device.
-                // Never start another microphone capture until the previous pipeline has completely finished.
-                done.await(30,TimeUnit.SECONDS);
-                if(!done.await(0,TimeUnit.MILLISECONDS)){
-                    Thread.sleep(250);
-                    continue;
+                // Never overlap microphone sessions. Capture is 5s and local speaker verification + Whisper may be slow.
+                // Wait up to 45s for the pipeline callback; after that, stop safely rather than opening a second recorder.
+                boolean completed=done.await(45,TimeUnit.SECONDS);
+                if(!completed){
+                    if(running)speak("Pemrosesan suara terlalu lama. Saya menghentikan sesi agar mikrofon tidak macet.");
+                    stopSession();
+                    break;
                 }
                 if(!running)break;
                 String text=transcript[0];
                 if(text==null||text.trim().isEmpty()){
-                    if(error[0]!=null&&!error[0].trim().isEmpty()) speakNatural(error[0]);
+                    if(error[0]!=null&&!error[0].trim().isEmpty())speakNatural(error[0]);
                     continue;
                 }
                 handle(text);
@@ -157,14 +158,14 @@ public final class IMOConversationService extends Service implements TextToSpeec
 
     private void stopSession(){
         running=false;
-        if(worker!=null)worker.interrupt();
+        if(worker!=null&&worker!=Thread.currentThread())worker.interrupt();
         if(Build.VERSION.SDK_INT>=24)stopForeground(STOP_FOREGROUND_REMOVE);else stopForeground(true);
         stopSelf();
     }
 
     @Override public void onDestroy(){
         running=false;
-        if(worker!=null)worker.interrupt();
+        if(worker!=null&&worker!=Thread.currentThread())worker.interrupt();
         if(tts!=null){tts.stop();tts.shutdown();}
         super.onDestroy();
     }
