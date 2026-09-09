@@ -150,19 +150,17 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         status.setText("Siap. Ikuti instruksi dengan suara alami.");
         speak("Baik. Mari kita daftarkan suara Anda. Setelah saya selesai berbicara, silakan ucapkan secara alami.");
         new Thread(() -> {
-            IMOSherpaSpeakerEncoder encoder = null;
             try {
                 waitForTtsToFinish(8000L);
                 Thread.sleep(900L);
-                encoder = new IMOSherpaSpeakerEncoder(getApplicationContext());
-                IMOSpeakerEncoder finalEncoder = encoder;
-                IMOVoiceEnrollment enrollment = new IMOVoiceEnrollment(finalEncoder, voiceIdentity);
+                IMOSherpaSpeakerEncoder encoder = new IMOSherpaSpeakerEncoder(getApplicationContext());
+                IMOVoiceEnrollment enrollment = new IMOVoiceEnrollment(encoder, voiceIdentity);
                 enrollment.enroll(3, 5000, new IMOVoiceEnrollment.Callback() {
                     @Override public void onProgress(String message) {
                         runOnUiThread(() -> status.setText(message));
                     }
                     @Override public void onFinished(boolean success, String message) {
-                        finalEncoder.release();
+                        encoder.release();
                         runOnUiThread(() -> {
                             enrollmentBusy = false;
                             enrollButton.setEnabled(true);
@@ -173,9 +171,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
                         });
                     }
                 });
-                encoder = null; // callback owns release after enrollment completes
             } catch (Exception e) {
-                if (encoder != null) encoder.release();
                 runOnUiThread(() -> {
                     enrollmentBusy = false;
                     enrollButton.setEnabled(true);
