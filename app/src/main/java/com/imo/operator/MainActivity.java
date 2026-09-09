@@ -117,41 +117,25 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         if (!started) { voiceBusy = false; mic.setText("🎙 MULAI BICARA"); status.setText("Tidak dapat memulai pipeline suara."); }
     }
 
-    /** Jarvis-style front door: understand, assess risk, normalize, request only needed permissions, then execute. */
     private void command(String input) {
         final String clean = input == null ? "" : input.trim(); if (clean.isEmpty()) return;
         IMOJarvisCore.Decision decision = IMOJarvisCore.understand(clean);
         IMOActionPolicy.Assessment risk = IMOActionPolicy.assess(clean);
         if (decision.intent == IMOJarvisCore.Intent.NONE && decision.confidence < .55f) {
-            chat.setText("Anda: " + clean + "\nIMO: Saya belum cukup yakin memahami maksudnya.");
-            status.setText("Perlu klarifikasi");
-            speak("Saya belum cukup yakin dengan maksud perintah itu. Tolong jelaskan sedikit lagi.");
-            memory.remember(clean, "Klarifikasi diperlukan");
-            return;
+            chat.setText("Anda: " + clean + "\nIMO: Saya belum cukup yakin memahami maksudnya."); status.setText("Perlu klarifikasi"); speak("Saya belum cukup yakin dengan maksud perintah itu. Tolong jelaskan sedikit lagi."); memory.remember(clean, "Klarifikasi diperlukan"); return;
         }
         String plannerInput = IMOJarvisCore.normalizeForPlanner(clean);
         String riskText = risk.risk == IMOActionPolicy.Risk.LOW ? "" : " • Risiko " + risk.risk;
-        chat.setText("Anda: " + clean + "\nIMO: Dipahami (" + Math.round(decision.confidence * 100) + "%)" + riskText + ". Mulai bekerja…");
-        status.setText("Menganalisis tujuan dan menyusun langkah…");
-        executeWithRequiredPermissions(plannerInput);
+        chat.setText("Anda: " + clean + "\nIMO: Dipahami (" + Math.round(decision.confidence * 100) + "%)" + riskText + ". Mulai bekerja…"); status.setText("Menganalisis tujuan dan menyusun langkah…"); executeWithRequiredPermissions(plannerInput);
     }
 
     private void executeWithRequiredPermissions(String plannerInput) {
         boolean needsCamera = plannerInput.toLowerCase(Locale.ROOT).contains("senter") || plannerInput.toLowerCase(Locale.ROOT).contains("flashlight") || plannerInput.toLowerCase(Locale.ROOT).contains("torch");
         boolean needsCall = plannerInput.toLowerCase(Locale.ROOT).startsWith("panggil ") || plannerInput.toLowerCase(Locale.ROOT).startsWith("telepon ") || plannerInput.toLowerCase(Locale.ROOT).startsWith("call ");
         pendingCommand = plannerInput; pendingCameraPermission = needsCamera; pendingCallPermission = needsCall;
-        if (needsCamera && checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            status.setText("Meminta izin kamera untuk mengendalikan lampu senter…");
-            requestPermissions(new String[]{Manifest.permission.CAMERA}, REQ_DEVICE);
-            return;
-        }
-        if (needsCall && checkSelfPermission(Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) {
-            status.setText("Meminta izin telepon untuk menjalankan panggilan…");
-            requestPermissions(new String[]{Manifest.permission.CALL_PHONE}, REQ_DEVICE);
-            return;
-        }
-        pendingCommand = null; pendingCameraPermission = false; pendingCallPermission = false;
-        executePlannedCommand(plannerInput);
+        if (needsCamera && checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) { status.setText("Meminta izin kamera untuk mengendalikan lampu senter…"); requestPermissions(new String[]{Manifest.permission.CAMERA}, REQ_DEVICE); return; }
+        if (needsCall && checkSelfPermission(Manifest.permission.CALL_PHONE) != PackageManager.PERMISSION_GRANTED) { status.setText("Meminta izin telepon untuk menjalankan panggilan…"); requestPermissions(new String[]{Manifest.permission.CALL_PHONE}, REQ_DEVICE); return; }
+        pendingCommand = null; pendingCameraPermission = false; pendingCallPermission = false; executePlannedCommand(plannerInput);
     }
 
     private void executePlannedCommand(String plannerInput) {
@@ -169,19 +153,24 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         if (result != TextToSpeech.SUCCESS) return;
         Locale indonesia = new Locale("id", "ID");
         int language = tts.setLanguage(indonesia);
-        tts.setSpeechRate(.88f);
-        tts.setPitch(.78f);
+        // Feminine target: prefer an Indonesian female voice; fall back to a high, softer pitch only when the engine has no gender-labelled voice.
+        tts.setSpeechRate(.90f);
+        Voice female = findFemaleIndonesianVoice(tts.getVoices(), indonesia);
+        if (female != null) {
+            tts.setVoice(female);
+            tts.setPitch(1.04f);
+        } else {
+            tts.setPitch(1.08f);
+        }
         if (language == TextToSpeech.LANG_MISSING_DATA || language == TextToSpeech.LANG_NOT_SUPPORTED) return;
-        Voice male = findMaleIndonesianVoice(tts.getVoices(), indonesia);
-        if (male != null) tts.setVoice(male);
     }
 
-    private static Voice findMaleIndonesianVoice(Set<Voice> voices, Locale locale) {
+    private static Voice findFemaleIndonesianVoice(Set<Voice> voices, Locale locale) {
         if (voices == null) return null;
         for (Voice voice : voices) {
             if (voice == null || voice.getLocale() == null || !voice.getLocale().getLanguage().equals(locale.getLanguage())) continue;
             String name = voice.getName() == null ? "" : voice.getName().toLowerCase(Locale.US);
-            if (name.contains("male") || name.contains("man") || name.contains("pria") || name.contains("#m")) return voice;
+            if (name.contains("female") || name.contains("woman") || name.contains("girl") || name.contains("wanita") || name.contains("perempuan") || name.contains("#f")) return voice;
         }
         return null;
     }
