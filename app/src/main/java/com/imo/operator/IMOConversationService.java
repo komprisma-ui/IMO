@@ -14,29 +14,24 @@ import java.util.Locale;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
-/**
- * Visible foreground voice session. Android requires an explicit microphone foreground-service
- * type for background microphone use on modern releases; the user starts/stops this session.
- */
+/** Visible foreground voice session. The user explicitly starts/stops continuous dialogue. */
 public final class IMOConversationService extends Service implements TextToSpeech.OnInitListener {
     public static final String ACTION_START="com.imo.operator.START_DIALOG";
     public static final String ACTION_STOP="com.imo.operator.STOP_DIALOG";
-    private static final int NOTIFICATION_ID=4201;
-    private static final String CHANNEL="imo_voice_operator";
+    private static final int NOTIFICATION_ID=4201; private static final String CHANNEL="imo_voice_operator";
     private volatile boolean running; private Thread worker; private TextToSpeech tts; private boolean ttsReady;
     private IMOVoiceIdentity identity; private IMOConversationBrain brain; private IMOConfirmation confirmation; private IMOEngine engine;
-
     @Override public void onCreate(){super.onCreate();createChannel();identity=new IMOVoiceIdentity(this);brain=new IMOConversationBrain(this);confirmation=new IMOConfirmation();tts=new TextToSpeech(this,this);}
     @Override public int onStartCommand(Intent intent,int flags,int startId){if(intent!=null&&ACTION_STOP.equals(intent.getAction())){stopSession();return START_NOT_STICKY;}startSession();return START_NOT_STICKY;}
     private void startSession(){if(running)return;if(!identity.isEnrolled()){speak("Voiceprint belum terdaftar. Silakan daftarkan suara Anda terlebih dahulu.");return;}try{Notification n=buildNotification();if(Build.VERSION.SDK_INT>=29)startForeground(NOTIFICATION_ID,n,ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE);else startForeground(NOTIFICATION_ID,n);}catch(Exception e){stopSelf();return;}running=true;worker=new Thread(this::loop,"IMO-Voice-Operator");worker.start();speak("Mode dialog HP aktif. Saya siap mendengarkan.");}
-    private void loop(){while(running){try{CountDownLatch done=new CountDownLatch(1);final String[] transcript={""};final String[] error={""};IMOVoiceCommandPipeline p=new IMOVoiceCommandPipeline(this,identity,.72f);boolean started=p.start(5000,new IMOVoiceCommandPipeline.Callback(){public void onState(String m){}public void onAccepted(short[]pcm,int rate){try{IMOLocalAsr asr=new IMOLocalAsr(IMOConversationService.this);transcript[0]=asr.transcribe(pcm,rate).trim();asr.release();}catch(Exception e){error[0]=e.getMessage();}finally{done.countDown();}}public void onRejected(String m){error[0]=m;done.countDown();}public void onError(String m){error[0]=m;done.countDown();}});if(!started){Thread.sleep(700);continue;}done.await(8,TimeUnit.SECONDS);String text=transcript[0];if(text==null||text.trim().isEmpty()){if(error[0]!=null&&!error[0].isEmpty()&&error[0].toLowerCase(Locale.ROOT).contains("mikrofon"))speak("Mikrofon belum siap.");continue;}handle(text);}catch(InterruptedException e){Thread.currentThread().interrupt();break;}catch(Exception e){speak("Terjadi kendala. Saya tetap berhenti aman.");}}
+    private void loop(){while(running){try{CountDownLatch done=new CountDownLatch(1);final String[] transcript={""};final String[] error={""};IMOVoiceCommandPipeline p=new IMOVoiceCommandPipeline(this,identity,.72f);boolean started=p.start(5000,new IMOVoiceCommandPipeline.Callback(){public void onState(String m){}public void onAccepted(short[]pcm,int rate){try{IMOLocalAsr asr=new IMOLocalAsr(IMOConversationService.this);transcript[0]=asr.transcribe(pcm,rate).trim();asr.release();}catch(Exception e){error[0]=e.getMessage();}finally{done.countDown();}}public void onRejected(String m){error[0]=m;done.countDown();}public void onError(String m){error[0]=m;done.countDown();}});if(!started){Thread.sleep(700);continue;}done.await(8,TimeUnit.SECONDS);String text=transcript[0];if(text==null||text.trim().isEmpty())continue;handle(text);}catch(InterruptedException e){Thread.currentThread().interrupt();break;}catch(Exception e){speak("Terjadi kendala. Saya tetap berhenti aman.");}}
     }
     private void handle(String text){try{if(engine==null)engine=new IMOEngine(IMOAccessibilityService.instance,confirmation,this);if(engine.hasPendingConfirmation()){CountDownLatch latch=new CountDownLatch(1);engine.execute(text,new CallbackTts(latch));latch.await(15,TimeUnit.SECONDS);return;}if(brain.aiConfigured()){String screen=IMOAccessibilityService.instance==null?"":IMOAccessibilityService.instance.readScreen();IMOConversationBrain.Reply r=brain.think(text,screen);if(r.execute){CountDownLatch latch=new CountDownLatch(1);engine.execute(r.text,new CallbackTts(latch));latch.await(20,TimeUnit.SECONDS);}else speakNatural(r.text);}else{CountDownLatch latch=new CountDownLatch(1);engine.execute(text,new CallbackTts(latch));latch.await(20,TimeUnit.SECONDS);}}catch(Exception e){speak("Saya mengalami kendala, tetapi tidak menjalankan tindakan yang tidak pasti.");}}
     private final class CallbackTts implements IMOEngine.Callback{private final CountDownLatch latch;CallbackTts(CountDownLatch l){latch=l;}public void onProgress(String m){}public void onConfirmationRequired(String m){speakNatural(m);latch.countDown();}public void onFinished(String m,boolean success){if(brain!=null)brain.rememberExecution(m);speakNatural(m);latch.countDown();}}
     private void speakNatural(String text){if(text==null||text.trim().isEmpty())return;speak(text);waitSpeech(10000);}
     private void speak(String text){if(ttsReady&&tts!=null)tts.speak(text,TextToSpeech.QUEUE_FLUSH,null,"imo_service");}
     private void waitSpeech(long max){long end=System.currentTimeMillis()+max;while(ttsReady&&tts!=null&&tts.isSpeaking()&&System.currentTimeMillis()<end){try{Thread.sleep(80);}catch(InterruptedException e){Thread.currentThread().interrupt();return;}}}
-    private void stopSession(){running=false;if(worker!=null)worker.interrupt();stopForeground(STOP_FOREGROUND_REMOVE);stopSelf();}
+    private void stopSession(){running=false;if(worker!=null)worker.interrupt();if(Build.VERSION.SDK_INT>=24)stopForeground(STOP_FOREGROUND_REMOVE);else stopForeground(true);stopSelf();}
     @Override public void onDestroy(){running=false;if(worker!=null)worker.interrupt();if(tts!=null){tts.stop();tts.shutdown();}super.onDestroy();}
     @Override public IBinder onBind(Intent intent){return null;}
     @Override public void onInit(int result){if(result!=TextToSpeech.SUCCESS)return;ttsReady=true;Locale id=new Locale("id","ID");tts.setLanguage(id);VoiceHelper.applyBest(tts,id);tts.setSpeechRate(.95f);tts.setPitch(.90f);}
