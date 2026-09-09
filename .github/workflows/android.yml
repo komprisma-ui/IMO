@@ -2,7 +2,7 @@ name: IMO Android Build
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, feature/natural-luna-final8 ]
   pull_request:
   workflow_dispatch:
 
@@ -15,24 +15,19 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
-
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
-
       - name: Install Android SDK packages
         run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
-
       - name: Fetch pinned speaker runtime and model
         shell: bash
         run: |
@@ -42,7 +37,6 @@ jobs:
           echo "c4ef49e309f24fcee5c106b8a279481aaecaabb078cd37b2cd6e9a62cc8a73c8  app/libs/sherpa-onnx-1.13.7.aar" | sha256sum -c -
           curl -fL --retry 4 --retry-all-errors -o app/src/main/assets/3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx
           echo "f682b514c05d947ee3fa91cd6ec6c5c7543479a128373fa29b1faedccd21fd11  app/src/main/assets/3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx" | sha256sum -c -
-
       - name: Fetch higher-accuracy multilingual Whisper ASR model
         shell: bash
         run: |
@@ -58,10 +52,8 @@ jobs:
           cp "$model_dir/base-decoder.int8.onnx" app/src/main/assets/asr/whisper-base/
           cp "$model_dir/base-tokens.txt" app/src/main/assets/asr/whisper-base/
           sha256sum app/src/main/assets/asr/whisper-base/*
-
       - name: Build install-ready release APK
         run: gradle assembleRelease --stacktrace
-
       - name: Verify APK signature and package
         shell: bash
         run: |
@@ -72,7 +64,6 @@ jobs:
           unzip -t "$APK" >/dev/null
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | head -n 8
           sha256sum "$APK"
-
       - name: Upload installer APK
         uses: actions/upload-artifact@v4
         with:
