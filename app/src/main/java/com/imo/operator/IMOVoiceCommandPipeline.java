@@ -28,7 +28,6 @@ public final class IMOVoiceCommandPipeline {
         if (running) return false;
         if (callback == null) throw new IllegalArgumentException("Callback is required");
         if (!identity.isEnrolled()) { callback.onRejected("Voiceprint belum terdaftar."); return false; }
-        // Consensus needs enough speech for three overlapping speaker windows.
         if (durationMs < 3000 || durationMs > 10000) throw new IllegalArgumentException("Voice capture must be 3-10 seconds");
         running = true;
         new Thread(() -> captureAndVerify(durationMs, callback), "IMO-VoicePipeline").start();
@@ -42,12 +41,14 @@ public final class IMOVoiceCommandPipeline {
         try {
             callback.onState("Mendengarkan suara…");
             short[] pcm = IMOAudioRecorder.record(durationMs);
-            if (!hasSpeech(pcm)) {
+            Quality quality = assessQuality(pcm);
+            if (!quality.speech) {
                 callback.onRejected("Ucapan belum cukup jelas. Dekatkan ponsel dan bicara sedikit lebih jelas.");
                 return;
             }
             short[] speech = trimSilence(pcm);
-            if (!hasSpeech(speech) || speech.length < IMOAudioRecorder.SAMPLE_RATE * 2) {
+            Quality trimmedQuality = assessQuality(speech);
+            if (!trimmedQuality.speech || speech.length < IMOAudioRecorder.SAMPLE_RATE * 2) {
                 callback.onRejected("Suara terlalu singkat. Ucapkan perintah sedikit lebih lengkap.");
                 return;
             }
@@ -91,20 +92,27 @@ public final class IMOVoiceCommandPipeline {
         return out;
     }
 
-    static boolean hasSpeech(short[] pcm) {
-        if (pcm == null || pcm.length < 4000) return false;
-        long energy = 0;
+    static boolean hasSpeech(short[] pcm) { return assessQuality(pcm).speech; }
+
+    /** Quality-aware gate: strong speech is accepted, but near-silence/noise is fail-closed. */
+    static Quality assessQuality(short[] pcm) {
+        if (pcm == null || pcm.length < 4000) return new Quality(false, 0, 0, 0);
+        double energy = 0;
         int peak = 0;
         int active = 0;
+        int clipped = 0;
         for (short sample : pcm) {
             int a = Math.abs((int) sample);
             peak = Math.max(peak, a);
-            energy += (long) a * a;
+            energy += (double) a * a;
             if (a >= 82) active++;
+            if (a >= 32700) clipped++;
         }
-        double rms = Math.sqrt((double) energy / pcm.length) / 32768.0;
+        double rms = Math.sqrt(energy / pcm.length) / 32768.0;
         double activeRatio = (double) active / pcm.length;
-        return rms >= 0.0025 && peak >= 300 && activeRatio >= 0.01;
+        double clippingRatio = (double) clipped / pcm.length;
+        boolean speech = rms >= 0.0020 && peak >= 300 && activeRatio >= 0.008 && activeRatio <= 0.98 && clippingRatio < 0.08;
+        return new Quality(speech, rms, activeRatio, clippingRatio);
     }
 
     static short[] trimSilence(short[] pcm) {
@@ -121,6 +129,13 @@ public final class IMOVoiceCommandPipeline {
         short[] out = new short[length];
         System.arraycopy(pcm, first, out, 0, length);
         return out;
+    }
+
+    static final class Quality {
+        final boolean speech; final double rms; final double activeRatio; final double clippingRatio;
+        Quality(boolean speech, double rms, double activeRatio, double clippingRatio) {
+            this.speech = speech; this.rms = rms; this.activeRatio = activeRatio; this.clippingRatio = clippingRatio;
+        }
     }
 
     private static String safe(String message) {
