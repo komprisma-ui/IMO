@@ -8,7 +8,6 @@ public final class IMOPerformanceProfile {
     public static final int MAX_AI_HISTORY = 14;
     public static final int MAX_SCREEN_CHARS = 6500;
 
-    /** Short utterances get a tighter end-of-speech window; long requests get more time. */
     public static int speechSilenceMs(String normalizedText) {
         int length = normalizedText == null ? 0 : normalizedText.trim().length();
         if (length <= 12) return 350;
@@ -16,13 +15,9 @@ public final class IMOPerformanceProfile {
         return 700;
     }
 
-    /** Avoid expensive visual/AI work for commands that are already deterministic. */
     public static boolean needsDeepReasoning(IMOAction action) {
         return action == null || action.getType() == IMOAction.Type.NONE;
     }
 
-    /** Fast execution should feel immediate; verification remains enabled in IMOEngine. */
-    public static int preActionDelayMs() {
-        return 0;
-    }
+    public static int preActionDelayMs() { return 0; }
 }
