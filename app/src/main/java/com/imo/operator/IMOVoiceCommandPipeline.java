@@ -26,6 +26,7 @@ public final class IMOVoiceCommandPipeline {
 
     public synchronized boolean start(long durationMs, Callback callback) {
         if (running) return false;
+        if (callback == null) throw new IllegalArgumentException("Callback is required");
         if (!identity.isEnrolled()) { callback.onRejected("Voiceprint belum terdaftar."); return false; }
         if (durationMs < 500 || durationMs > 10000) throw new IllegalArgumentException("Invalid recording duration");
         running = true;
@@ -40,27 +41,62 @@ public final class IMOVoiceCommandPipeline {
         try {
             callback.onState("Mendengarkan suara…");
             short[] pcm = IMOAudioRecorder.record(durationMs);
-            if (!hasSpeech(pcm)) { callback.onRejected("Tidak ada ucapan yang cukup jelas."); return; }
+            if (!hasSpeech(pcm)) {
+                callback.onRejected("Ucapan belum cukup jelas. Dekatkan ponsel dan bicara sedikit lebih jelas.");
+                return;
+            }
+            short[] speech = trimSilence(pcm);
             callback.onState("Memeriksa identitas suara…");
             encoder = new IMOSherpaSpeakerEncoder(context);
             IMOSpeakerGate gate = new IMOSpeakerGate(1, 1, threshold);
             IMOVoiceVerifier verifier = new IMOVoiceVerifier(encoder, identity, gate);
-            if (!verifier.verify(pcm, IMOAudioRecorder.SAMPLE_RATE)) {
-                callback.onRejected("Suara tidak dikenali. Perintah dihentikan."); return;
+            if (!verifier.verify(speech, IMOAudioRecorder.SAMPLE_RATE)) {
+                callback.onRejected("Suara tidak dikenali. Perintah dihentikan.");
+                return;
             }
-            callback.onState("Suara cocok ✓. Meneruskan audio yang sama ke ASR…");
-            callback.onAccepted(pcm, IMOAudioRecorder.SAMPLE_RATE);
-        } catch (Exception e) { callback.onError(safe(e.getMessage())); }
-        finally { if (encoder != null) encoder.release(); running = false; }
+            callback.onState("Suara cocok ✓. Memahami perintah secara offline…");
+            callback.onAccepted(speech, IMOAudioRecorder.SAMPLE_RATE);
+        } catch (Exception e) {
+            callback.onError(safe(e.getMessage()));
+        } finally {
+            if (encoder != null) encoder.release();
+            running = false;
+        }
     }
 
     static boolean hasSpeech(short[] pcm) {
-        if (pcm == null || pcm.length == 0) return false;
-        long energy = 0; int peak = 0;
-        for (short sample : pcm) { int a = Math.abs((int) sample); peak = Math.max(peak, a); energy += (long) a * a; }
+        if (pcm == null || pcm.length < 4000) return false;
+        long energy = 0;
+        int peak = 0;
+        int active = 0;
+        for (short sample : pcm) {
+            int a = Math.abs((int) sample);
+            peak = Math.max(peak, a);
+            energy += (long) a * a;
+            if (a >= 82) active++;
+        }
         double rms = Math.sqrt((double) energy / pcm.length) / 32768.0;
-        return rms >= 0.008 && peak >= 900;
+        double activeRatio = (double) active / pcm.length;
+        return rms >= 0.0025 && peak >= 300 && activeRatio >= 0.01;
     }
 
-    private static String safe(String message) { return message == null || message.trim().isEmpty() ? "kesalahan audio tidak diketahui" : message; }
+    static short[] trimSilence(short[] pcm) {
+        if (pcm == null || pcm.length == 0) return pcm;
+        int first = 0, last = pcm.length - 1;
+        final int threshold = 82;
+        while (first < pcm.length && Math.abs((int) pcm[first]) < threshold) first++;
+        while (last > first && Math.abs((int) pcm[last]) < threshold) last--;
+        int padding = IMOAudioRecorder.SAMPLE_RATE / 8;
+        first = Math.max(0, first - padding);
+        last = Math.min(pcm.length - 1, last + padding);
+        int length = last - first + 1;
+        if (length < IMOAudioRecorder.SAMPLE_RATE / 2) return pcm;
+        short[] out = new short[length];
+        System.arraycopy(pcm, first, out, 0, length);
+        return out;
+    }
+
+    private static String safe(String message) {
+        return message == null || message.trim().isEmpty() ? "kesalahan audio tidak diketahui" : message;
+    }
 }
