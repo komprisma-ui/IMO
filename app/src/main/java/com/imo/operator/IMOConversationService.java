@@ -72,7 +72,7 @@ public final class IMOConversationService extends Service implements TextToSpeec
                 String screen=IMOAccessibilityService.instance==null?"":IMOAccessibilityService.instance.readScreen();
                 if(vision!=null&&vision.hasFrame()&&isPureConversation(text)){
                     IMOVisionReasoner.Reply vr=IMOVisionReasoner.think(brain.ai(),text,screen,vision.latestFrame());
-                    if(vr.execute)startAgent(vr.text);else speakNatural(vr.text);
+                    if(vr.execute)startAgent(text);else speakNatural(vr.text);
                 }else{
                     startAgent(text);
                 }
@@ -82,10 +82,10 @@ public final class IMOConversationService extends Service implements TextToSpeec
         }catch(Exception e){speakNatural("Saya mengalami kendala, tetapi tidak menjalankan tindakan yang tidak pasti.");}
     }
 
-    /** Starts the bounded autonomous loop. Each cycle re-reads the UI and asks the brain for the next step. */
+    /** Starts the bounded autonomous loop. Each cycle re-reads the UI and may use camera vision. */
     private void startAgent(String goal){
         if(agent==null||!agent.isRunning()){
-            agent=new IMOAutonomousAgent(brain,engine,IMOAccessibilityService.instance,new IMOAutonomousAgent.Callback(){
+            agent=new IMOAutonomousAgent(brain,engine,IMOAccessibilityService.instance,vision,new IMOAutonomousAgent.Callback(){
                 public void onProgress(String message){}
                 public void onSpeak(String message){speakNatural(message);}
                 public void onFinished(boolean success,String message){if(brain!=null)brain.rememberExecution(message);speakNatural(message);}
