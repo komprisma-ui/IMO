@@ -7,7 +7,7 @@ import com.k2fsa.sherpa.onnx.OfflineRecognizerConfig;
 import com.k2fsa.sherpa.onnx.OfflineStream;
 import com.k2fsa.sherpa.onnx.OfflineWhisperModelConfig;
 
-/** Offline multilingual Whisper ASR. Raw PCM is transient and is not persisted. */
+/** Persistent offline multilingual Whisper ASR. The recognizer stays warm for the whole voice session. */
 public final class IMOLocalAsr {
     private static final String MODEL_DIR = "asr/whisper-tiny";
     private final OfflineRecognizer recognizer;
@@ -20,14 +20,13 @@ public final class IMOLocalAsr {
         whisper.setLanguage("id");
         whisper.setTask("transcribe");
         whisper.setTailPaddings(1000);
-
         OfflineModelConfig model = new OfflineModelConfig();
         model.setWhisper(whisper);
         model.setTokens(MODEL_DIR + "/tiny-tokens.txt");
-        model.setNumThreads(2);
+        int cores = Runtime.getRuntime().availableProcessors();
+        model.setNumThreads(Math.max(2, Math.min(4, cores)));
         model.setProvider("cpu");
         model.setModelType("whisper");
-
         OfflineRecognizerConfig config = new OfflineRecognizerConfig();
         config.setModelConfig(model);
         config.setDecodingMethod("greedy_search");
