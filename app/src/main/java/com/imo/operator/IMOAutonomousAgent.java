@@ -3,6 +3,9 @@ package com.imo.operator;
 import android.os.Handler;
 import android.os.Looper;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
 /** Bounded JARVIS-style loop: observe -> reason -> act -> observe -> re-plan. */
 public final class IMOAutonomousAgent {
     public interface Callback {
@@ -14,6 +17,7 @@ public final class IMOAutonomousAgent {
     private static final int MAX_CYCLES = 8;
     private static final long CYCLE_TIMEOUT_MS = 30000L;
     private final Handler main = new Handler(Looper.getMainLooper());
+    private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final IMOConversationBrain brain;
     private final IMOEngine engine;
     private final IMOAccessibilityService service;
@@ -37,12 +41,20 @@ public final class IMOAutonomousAgent {
         callback.onProgress("Mode JARVIS aktif: saya akan menyelesaikan tujuan ini dan memeriksa hasilnya.");
         nextCycle(0, null);
     }
-    public synchronized void stop() { running = false; goal = null; }
+
+    public synchronized void stop() {
+        running = false;
+        goal = null;
+        main.removeCallbacksAndMessages(null);
+        worker.shutdownNow();
+    }
 
     private void nextCycle(long delay, String previousResult) {
         if (!running) return;
         if (cycle >= MAX_CYCLES) { finish(false, "Saya menghentikan tugas setelah batas percobaan tercapai agar tidak berputar tanpa kendali."); return; }
-        if (delay <= 0) runCycle(previousResult); else main.postDelayed(() -> runCycle(previousResult), delay);
+        Runnable task = () -> { if (running) runCycle(previousResult); };
+        if (delay <= 0) worker.execute(task);
+        else main.postDelayed(() -> { if (running) worker.execute(task); }, delay);
     }
 
     private void runCycle(String previousResult) {
@@ -62,6 +74,10 @@ public final class IMOAutonomousAgent {
                 reply = brain.think(request, screen);
             }
             if (!running) return;
+            if (reply == null || reply.text == null || reply.text.trim().isEmpty()) {
+                nextCycle(250, "PENALARAN TIDAK MEMBERIKAN KEPUTUSAN YANG VALID");
+                return;
+            }
             if (!reply.execute) { finish(true, reply.text); return; }
 
             final boolean[] callbackCalled = {false};
