@@ -59,11 +59,22 @@ jobs:
           cp "$model_dir/tiny-tokens.txt" app/src/main/assets/asr/whisper-tiny/
           sha256sum app/src/main/assets/asr/whisper-tiny/*
 
-      - name: Build debug APK
-        run: gradle assembleDebug --stacktrace
+      - name: Build install-ready release APK
+        run: gradle assembleRelease --stacktrace
 
-      - name: Upload APK
+      - name: Verify APK signature and package
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="$(find app/build/outputs/apk/release -name '*.apk' -type f | head -n 1)"
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
+          unzip -t "$APK" >/dev/null
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | head -n 8
+          sha256sum "$APK"
+
+      - name: Upload installer APK
         uses: actions/upload-artifact@v4
         with:
-          name: IMO-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          name: IMO-1.4.1-INSTALLER
+          path: app/build/outputs/apk/release/*.apk
