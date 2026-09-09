@@ -56,12 +56,11 @@ public final class IMOVoiceIdentity {
         Exception aesFailure = null;
         try {
             SecretKey key = getOrCreateAesKey();
-            // IMPORTANT: Android Keystore owns the GCM IV. Supplying our own IV to
-            // Cipher.init(ENCRYPT_MODE, keystoreKey, GCMParameterSpec) is rejected by
-            // several Android 11/OEM implementations with "Caller-provided IV not permitted".
+            // Android Keystore owns the GCM IV. Supplying a caller-generated IV during
+            // encryption is rejected by several Android 11/OEM implementations.
             byte[] packed = encryptWithKeystoreGeneratedIv(plain, key);
             save(packed, "aes-gcm-keystore-v6");
-            float[] check = decryptAes(packed);
+            float[] check = decryptV6(packed);
             if (check == null || cosineSimilarity(embedding, check) < 0.999f)
                 throw new IllegalStateException("AES Keystore read-back voiceprint tidak cocok");
             return;
@@ -86,9 +85,7 @@ public final class IMOVoiceIdentity {
         }
     }
 
-    public synchronized boolean isEnrolled() {
-        return load() != null;
-    }
+    public synchronized boolean isEnrolled() { return load() != null; }
 
     public synchronized float[] load() {
         String encoded = prefs.getString(KEY_EMBEDDING, "");
@@ -98,7 +95,7 @@ public final class IMOVoiceIdentity {
                 float[] result = decryptV6(packed);
                 if (result != null) return result;
 
-                // Current v5 format compatibility. Some older builds used a caller-generated IV.
+                // Compatibility with the previous v5 caller-IV format.
                 result = decryptAesV5(packed, AES_ALIAS);
                 if (result != null) return result;
                 for (String oldAlias : COMPAT_ALIASES) {
@@ -238,22 +235,20 @@ public final class IMOVoiceIdentity {
         if (iv == null || iv.length < 12 || iv.length > 16)
             throw new IllegalStateException("Android Keystore menghasilkan GCM IV yang tidak valid");
         byte[] encrypted = cipher.doFinal(plain);
-        ByteBuffer out = ByteBuffer.allocate(2 + iv.length + encrypted.length);
-        out.put((byte) AES_MAGIC).put((byte) AES_FORMAT).put(iv).put(encrypted);
+        ByteBuffer out = ByteBuffer.allocate(3 + iv.length + encrypted.length);
+        out.put((byte) AES_MAGIC).put((byte) AES_FORMAT).put((byte) iv.length).put(iv).put(encrypted);
         return out.array();
     }
 
-    private float[] decryptV6(byte[] packed) {
-        return fromBytes(decryptV6Bytes(packed));
-    }
+    private float[] decryptV6(byte[] packed) { return fromBytes(decryptV6Bytes(packed)); }
 
     private byte[] decryptV6Bytes(byte[] packed) {
         try {
             if (packed == null || packed.length < 20) return null;
             ByteBuffer in = ByteBuffer.wrap(packed);
             if ((in.get() & 0xff) != AES_MAGIC || (in.get() & 0xff) != AES_FORMAT) return null;
-            int ivLen = 12; // Keystore-generated GCM IV for Android is expected to be 12 bytes.
-            if (in.remaining() <= ivLen) return null;
+            int ivLen = in.get() & 0xff;
+            if (ivLen < 12 || ivLen > 16 || in.remaining() <= ivLen) return null;
             byte[] iv = new byte[ivLen]; in.get(iv);
             byte[] encrypted = new byte[in.remaining()]; in.get(encrypted);
             SecretKey key = getExistingAes(AES_ALIAS);
@@ -261,9 +256,7 @@ public final class IMOVoiceIdentity {
             Cipher cipher = Cipher.getInstance(TRANSFORMATION);
             cipher.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(128, iv));
             return cipher.doFinal(encrypted);
-        } catch (Exception ignored) {
-            return null;
-        }
+        } catch (Exception ignored) { return null; }
     }
 
     private float[] decryptAesV5(byte[] packed, String alias) {
@@ -294,9 +287,7 @@ public final class IMOVoiceIdentity {
             Cipher cipher = Cipher.getInstance(TRANSFORMATION);
             cipher.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(128, iv));
             return cipher.doFinal(encrypted);
-        } catch (Exception ignored) {
-            return null;
-        }
+        } catch (Exception ignored) { return null; }
     }
 
     private byte[] hybridEncrypt(byte[] plain, KeyPair pair) throws Exception {
@@ -355,9 +346,7 @@ public final class IMOVoiceIdentity {
             if (!valid(result)) return null;
             enroll(result);
             return result;
-        } catch (Exception ignored) {
-            return null;
-        }
+        } catch (Exception ignored) { return null; }
     }
 
     private void deleteAlias(String alias) {
