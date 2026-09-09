@@ -44,7 +44,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
     private void buildUi() {
         LinearLayout root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setPadding(32,40,32,30);
         TextView title = new TextView(this); title.setText("IMO"); title.setTextSize(34); title.setGravity(Gravity.CENTER); root.addView(title);
-        TextView subtitle = new TextView(this); subtitle.setText("Intelligent Mobile Operator"); subtitle.setGravity(Gravity.CENTER); root.addView(subtitle);
+        TextView subtitle = new TextView(this); subtitle.setText("Intelligent Mobile Operator • JARVIS Core"); subtitle.setGravity(Gravity.CENTER); root.addView(subtitle);
         status = new TextView(this); status.setText("Siap. Saya menunggu perintah ji."); status.setTextSize(17); status.setPadding(0,25,0,20); root.addView(status);
         chat = new TextView(this); chat.setText("IMO: Siap membantu."); chat.setTextSize(18); root.addView(chat);
         voiceStatus = new TextView(this); voiceStatus.setTextSize(15); voiceStatus.setPadding(0,15,0,10); root.addView(voiceStatus);
@@ -69,9 +69,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
                 IMOSherpaSpeakerEncoder encoder = new IMOSherpaSpeakerEncoder(this);
                 IMOVoiceEnrollment enrollment = new IMOVoiceEnrollment(encoder, voiceIdentity);
                 enrollment.enroll(3, 4000, new IMOVoiceEnrollment.Callback() {
-                    @Override public void onProgress(String message) {
-                        runOnUiThread(() -> status.setText(message));
-                    }
+                    @Override public void onProgress(String message) { runOnUiThread(() -> status.setText(message)); }
                     @Override public void onFinished(boolean success, String message) {
                         encoder.release();
                         runOnUiThread(() -> { status.setText(success ? "Voiceprint siap ✓" : "Pendaftaran suara perlu diulang"); chat.setText("IMO: " + message); refreshVoiceStatus(); speak(message); });
@@ -98,11 +96,24 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         if (!started) { voiceBusy = false; mic.setText("🎙 MULAI BICARA"); status.setText("Tidak dapat memulai pipeline suara."); }
     }
 
+    /** Jarvis-style front door: understand, assess risk, normalize, then execute through the existing action engine. */
     private void command(String input) {
         final String clean = input == null ? "" : input.trim(); if (clean.isEmpty()) return;
-        chat.setText("Anda: " + clean + "\nIMO: Saya memahami perintahnya dan mulai bekerja…"); status.setText("Memproses…");
+        IMOJarvisCore.Decision decision = IMOJarvisCore.understand(clean);
+        IMOActionPolicy.Assessment risk = IMOActionPolicy.assess(clean);
+        if (decision.intent == IMOJarvisCore.Intent.NONE && decision.confidence < .55f) {
+            chat.setText("Anda: " + clean + "\nIMO: Saya belum cukup yakin memahami maksudnya.");
+            status.setText("Perlu klarifikasi");
+            speak("Saya belum cukup yakin dengan maksud perintah itu. Tolong jelaskan sedikit lagi.");
+            memory.remember(clean, "Klarifikasi diperlukan");
+            return;
+        }
+        String plannerInput = IMOJarvisCore.normalizeForPlanner(clean);
+        String riskText = risk.risk == IMOActionPolicy.Risk.LOW ? "" : " • Risiko " + risk.risk;
+        chat.setText("Anda: " + clean + "\nIMO: Dipahami (" + Math.round(decision.confidence * 100) + "%)" + riskText + ". Mulai bekerja…");
+        status.setText("Menganalisis tujuan dan menyusun langkah…");
         engine = new IMOEngine(IMOAccessibilityService.instance, confirmation);
-        engine.execute(clean, new IMOEngine.Callback() {
+        engine.execute(plannerInput, new IMOEngine.Callback() {
             @Override public void onProgress(String message) { runOnUiThread(() -> status.setText(message)); }
             @Override public void onConfirmationRequired(String message) { memory.remember(clean, message); runOnUiThread(() -> { status.setText("Menunggu konfirmasi"); chat.setText("Anda: " + clean + "\nIMO: " + message); speak(message); }); }
             @Override public void onFinished(String message, boolean success) { memory.remember(clean, message); runOnUiThread(() -> { status.setText(success ? "Selesai ✓" : "Belum selesai"); chat.setText("Anda: " + clean + "\nIMO: " + message); speak(message); }); }
