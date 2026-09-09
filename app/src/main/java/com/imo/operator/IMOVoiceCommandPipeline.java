@@ -2,7 +2,7 @@ package com.imo.operator;
 
 import android.content.Context;
 
-/** Single-capture voice pipeline: VAD -> speaker verification -> same PCM to ASR. */
+/** Voice pipeline: VAD -> quality -> multi-window speaker consensus -> same PCM to ASR. */
 public final class IMOVoiceCommandPipeline {
     public interface Callback {
         void onState(String message);
@@ -28,9 +28,10 @@ public final class IMOVoiceCommandPipeline {
         if (running) return false;
         if (callback == null) throw new IllegalArgumentException("Callback is required");
         if (!identity.isEnrolled()) { callback.onRejected("Voiceprint belum terdaftar."); return false; }
-        if (durationMs < 500 || durationMs > 10000) throw new IllegalArgumentException("Invalid recording duration");
+        // Consensus needs enough speech for three overlapping speaker windows.
+        if (durationMs < 3000 || durationMs > 10000) throw new IllegalArgumentException("Voice capture must be 3-10 seconds");
         running = true;
-        new Thread(() -> captureAndVerify(durationMs, callback), "IMO-SingleVoicePipeline").start();
+        new Thread(() -> captureAndVerify(durationMs, callback), "IMO-VoicePipeline").start();
         return true;
     }
 
@@ -46,12 +47,17 @@ public final class IMOVoiceCommandPipeline {
                 return;
             }
             short[] speech = trimSilence(pcm);
-            callback.onState("Memeriksa identitas suara…");
+            if (!hasSpeech(speech) || speech.length < IMOAudioRecorder.SAMPLE_RATE * 2) {
+                callback.onRejected("Suara terlalu singkat. Ucapkan perintah sedikit lebih lengkap.");
+                return;
+            }
+            callback.onState("Mengenali suara dari beberapa bagian ucapan…");
             encoder = new IMOSherpaSpeakerEncoder(context);
-            IMOSpeakerGate gate = new IMOSpeakerGate(1, 1, threshold);
+            IMOSpeakerGate gate = new IMOSpeakerGate(3, 2, threshold);
             IMOVoiceVerifier verifier = new IMOVoiceVerifier(encoder, identity, gate);
-            if (!verifier.verify(speech, IMOAudioRecorder.SAMPLE_RATE)) {
-                callback.onRejected("Suara tidak dikenali. Perintah dihentikan.");
+            short[][] windows = makeWindows(speech, IMOAudioRecorder.SAMPLE_RATE);
+            if (!verifier.verifyConsensus(windows, IMOAudioRecorder.SAMPLE_RATE)) {
+                callback.onRejected("Suara belum cukup cocok. Coba ulangi dengan jarak ponsel yang sama dan bicara alami.");
                 return;
             }
             callback.onState("Suara cocok ✓. Memahami perintah secara offline…");
@@ -62,6 +68,27 @@ public final class IMOVoiceCommandPipeline {
             if (encoder != null) encoder.release();
             running = false;
         }
+    }
+
+    /** Three overlapping windows preserve robustness when one portion contains noise or a pause. */
+    static short[][] makeWindows(short[] pcm, int sampleRateHz) {
+        int window = Math.max(sampleRateHz, (int)(sampleRateHz * 1.5));
+        if (pcm == null || pcm.length < window) return new short[][]{pcm, pcm, pcm};
+        int maxStart = pcm.length - window;
+        int start1 = 0;
+        int start2 = Math.max(0, maxStart / 2);
+        int start3 = maxStart;
+        return new short[][]{
+                slice(pcm, start1, window),
+                slice(pcm, start2, window),
+                slice(pcm, start3, window)
+        };
+    }
+
+    private static short[] slice(short[] pcm, int start, int length) {
+        short[] out = new short[length];
+        System.arraycopy(pcm, start, out, 0, length);
+        return out;
     }
 
     static boolean hasSpeech(short[] pcm) {
