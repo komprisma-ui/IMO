@@ -33,7 +33,7 @@ public final class IMOConversationBrain {
         if(!ai.configured())return offline(clean);
         StringBuilder context=new StringBuilder();
         for(String h:history)context.append(h).append('\n');
-        context.append("STATE: energy=").append(energy).append(",confidence=").append(confidence).append('\nRECENT MEMORY: ");
+        context.append("STATE: energy=").append(energy).append(",confidence=").append(confidence).append('\n').append("RECENT MEMORY: ");
         for(Event e:recent(8))context.append(e.kind).append('=').append(e.summary).append("; ");
         String answer=fast?ai.reasonFast(SYSTEM,context.toString(),screen==null?"":screen):ai.reason(SYSTEM,context.toString(),screen==null?"":screen);
         addMemory("IMO",answer); history.addLast("IMO: "+answer); trim();
