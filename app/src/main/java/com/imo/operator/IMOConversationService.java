@@ -68,6 +68,16 @@ public final class IMOConversationService extends Service implements TextToSpeec
             if(engine.hasPendingConfirmation()){
                 CountDownLatch latch=new CountDownLatch(1);engine.execute(text,new CallbackTts(latch));latch.await(20,TimeUnit.SECONDS);return;
             }
+
+            // Fast path: simple device commands never wait for the cloud AI.
+            IMOAction fast=IMOFastIntent.parse(text);
+            if(fast!=null){
+                CountDownLatch latch=new CountDownLatch(1);
+                engine.execute(fastToCommand(fast),new CallbackTts(latch));
+                latch.await(20,TimeUnit.SECONDS);
+                return;
+            }
+
             if(brain.aiConfigured()){
                 String screen=IMOAccessibilityService.instance==null?"":IMOAccessibilityService.instance.readScreen();
                 if(vision!=null&&vision.hasFrame()&&isPureConversation(text)){
@@ -80,6 +90,19 @@ public final class IMOConversationService extends Service implements TextToSpeec
                 CountDownLatch latch=new CountDownLatch(1);engine.execute(text,new CallbackTts(latch));latch.await(25,TimeUnit.SECONDS);
             }
         }catch(Exception e){speakNatural("Saya mengalami kendala, tetapi tidak menjalankan tindakan yang tidak pasti.");}
+    }
+
+    /** Converts a fast action back into the planner's natural command vocabulary so the central executor remains authoritative. */
+    private String fastToCommand(IMOAction a){
+        switch(a.type){
+            case BACK:return "kembali"; case HOME:return "beranda"; case RECENTS:return "aplikasi terbaru";
+            case NOTIFICATIONS:return "buka notifikasi"; case QUICK_SETTINGS:return "pengaturan cepat";
+            case SCROLL_UP:return "scroll atas"; case SCROLL_DOWN:return "scroll bawah";
+            case VOLUME_UP:return "naikkan volume"; case VOLUME_DOWN:return "turunkan volume"; case MUTE:return "mute";
+            case TORCH_ON:return "nyalakan senter"; case TORCH_OFF:return "matikan senter";
+            case OPEN_APP:return "buka "+a.value;
+            default:return null;
+        }
     }
 
     /** Starts the bounded autonomous loop. Each cycle re-reads the UI and may use camera vision. */
