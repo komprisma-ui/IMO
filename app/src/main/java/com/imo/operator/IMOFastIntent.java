@@ -2,57 +2,100 @@ package com.imo.operator;
 
 import java.util.Locale;
 
-/** Local zero-network router for common commands. Keeps simple interactions instant. */
+/** Local zero-network intent router. Handles high-confidence Indonesian commands without cloud reasoning. */
 public final class IMOFastIntent {
     private IMOFastIntent() {}
 
     public static IMOAction parse(String input) {
         if (input == null) return null;
-        String n = normalize(input);
+        String raw = input.trim();
+        if (raw.isEmpty() || raw.contains("?")) return null; // Questions should remain conversational.
+        String n = normalize(raw);
         if (n.isEmpty()) return null;
-        if (matches(n, "kembali", "back", "mundur", "tolong kembali", "bisa kembali", "kembali dong")) return IMOAction.of(IMOAction.Type.BACK, null);
-        if (matches(n, "home", "beranda", "layar utama", "ke beranda", "tolong ke beranda", "bisa ke beranda")) return IMOAction.of(IMOAction.Type.HOME, null);
-        if (matches(n, "aplikasi terbaru", "recent apps", "recent app", "aplikasi terakhir", "tolong buka aplikasi terbaru")) return IMOAction.of(IMOAction.Type.RECENTS, null);
-        if (matches(n, "notifikasi", "buka notifikasi", "lihat notifikasi", "notification", "tolong buka notifikasi", "bisa buka notifikasi")) return IMOAction.of(IMOAction.Type.NOTIFICATIONS, null);
-        if (matches(n, "pengaturan cepat", "quick settings", "panel cepat", "panel pengaturan cepat", "buka pengaturan cepat")) return IMOAction.of(IMOAction.Type.QUICK_SETTINGS, null);
-        if (matches(n, "geser atas", "geser ke atas", "scroll atas", "scroll ke atas", "gulir ke atas", "tolong geser ke atas")) return IMOAction.of(IMOAction.Type.SCROLL_UP, null);
-        if (matches(n, "geser bawah", "geser ke bawah", "scroll bawah", "scroll ke bawah", "gulir ke bawah", "tolong geser ke bawah")) return IMOAction.of(IMOAction.Type.SCROLL_DOWN, null);
-        if (matches(n, "besarkan volume", "volume naik", "naikkan volume", "keraskan suara", "tolong naikkan volume", "naikkan volume sedikit", "besarkan suara")) return IMOAction.of(IMOAction.Type.VOLUME_UP, null);
-        if (matches(n, "kecilkan volume", "volume turun", "turunkan volume", "pelankan suara", "tolong turunkan volume", "kecilkan volume sedikit")) return IMOAction.of(IMOAction.Type.VOLUME_DOWN, null);
-        if (matches(n, "mute", "senyapkan suara", "diamkan suara", "tolong mute", "bisukan suara")) return IMOAction.of(IMOAction.Type.MUTE, null);
-        if (matches(n, "nyalakan senter", "hidupkan senter", "senter nyala", "flashlight on", "tolong nyalakan senter", "bisa nyalakan senter")) return IMOAction.of(IMOAction.Type.TORCH_ON, null);
-        if (matches(n, "matikan senter", "senter mati", "flashlight off", "tolong matikan senter", "bisa matikan senter")) return IMOAction.of(IMOAction.Type.TORCH_OFF, null);
-        String app = appAfter(n, "buka ");
-        if (app == null) app = appAfter(n, "bukakan ");
-        if (app == null) app = appAfter(n, "jalankan ");
-        if (app == null) app = appAfter(n, "open ");
+
+        if (hasAny(n, "kembali", "back", "mundur", "ke halaman sebelumnya", "kembali ke halaman sebelumnya"))
+            return IMOAction.of(IMOAction.Type.BACK, null);
+        if (hasAny(n, "home", "beranda", "layar utama", "ke beranda", "ke layar utama"))
+            return IMOAction.of(IMOAction.Type.HOME, null);
+        if (hasAny(n, "aplikasi terbaru", "recent apps", "recent app", "aplikasi terakhir", "buka aplikasi terbaru"))
+            return IMOAction.of(IMOAction.Type.RECENTS, null);
+        if (hasAny(n, "notifikasi", "buka notifikasi", "lihat notifikasi", "cek notifikasi", "notification"))
+            return IMOAction.of(IMOAction.Type.NOTIFICATIONS, null);
+        if (hasAny(n, "pengaturan cepat", "quick settings", "panel cepat", "panel pengaturan cepat"))
+            return IMOAction.of(IMOAction.Type.QUICK_SETTINGS, null);
+
+        if (hasAny(n, "geser atas", "geser ke atas", "scroll atas", "scroll ke atas", "gulir ke atas", "naik ke atas"))
+            return IMOAction.of(IMOAction.Type.SCROLL_UP, null);
+        if (hasAny(n, "geser bawah", "geser ke bawah", "scroll bawah", "scroll ke bawah", "gulir ke bawah", "turun ke bawah"))
+            return IMOAction.of(IMOAction.Type.SCROLL_DOWN, null);
+
+        if (hasAny(n, "besarkan volume", "volume naik", "naikkan volume", "keraskan suara", "besarkan suara", "naikkan suara", "tambah volume"))
+            return IMOAction.of(IMOAction.Type.VOLUME_UP, null);
+        if (hasAny(n, "kecilkan volume", "volume turun", "turunkan volume", "pelankan suara", "kecilkan suara", "turunkan suara", "kurangi volume"))
+            return IMOAction.of(IMOAction.Type.VOLUME_DOWN, null);
+        if (hasAny(n, "mute", "senyapkan suara", "diamkan suara", "bisukan suara", "matikan suara"))
+            return IMOAction.of(IMOAction.Type.MUTE, null);
+
+        if (hasAny(n, "nyalakan senter", "hidupkan senter", "senter nyala", "senter hidup", "flashlight on"))
+            return IMOAction.of(IMOAction.Type.TORCH_ON, null);
+        if (hasAny(n, "matikan senter", "senter mati", "senter padam", "flashlight off"))
+            return IMOAction.of(IMOAction.Type.TORCH_OFF, null);
+
+        if (hasAny(n, "buka wifi", "buka wi fi", "pengaturan wifi", "pengaturan wi fi", "setelan wifi", "atur wifi"))
+            return IMOAction.of(IMOAction.Type.OPEN_WIFI_SETTINGS, null);
+        if (hasAny(n, "buka bluetooth", "pengaturan bluetooth", "setelan bluetooth", "atur bluetooth"))
+            return IMOAction.of(IMOAction.Type.OPEN_BLUETOOTH_SETTINGS, null);
+        if (hasAny(n, "buka pengaturan", "buka setelan", "pengaturan hp", "setelan hp", "settings"))
+            return IMOAction.of(IMOAction.Type.OPEN_SYSTEM_SETTINGS, null);
+
+        String app = appTarget(n);
         if (app != null) return IMOAction.of(IMOAction.Type.OPEN_APP, app);
         return null;
     }
 
-    private static String appAfter(String n, String prefix) {
-        if (!n.startsWith(prefix)) return null;
-        String v = stripPoliteSuffix(n.substring(prefix.length()).trim());
-        if (v.isEmpty()) return null;
+    private static String appTarget(String n) {
+        String[] prefixes = {"buka ", "bukakan ", "jalankan ", "open ", "tolong buka ", "tolong bukakan ", "bisa buka ", "coba buka ", "masuk ke ", "buka aplikasi "};
+        for (String prefix : prefixes) {
+            if (!n.startsWith(prefix)) continue;
+            String v = stripPoliteSuffix(n.substring(prefix.length()).trim());
+            if (v.isEmpty()) return null;
+            String known = knownPackage(v);
+            return known == null ? v : known;
+        }
+        return null;
+    }
+
+    private static String knownPackage(String v) {
         if (v.equals("whatsapp") || v.equals("wa")) return "com.whatsapp";
         if (v.equals("chrome") || v.equals("browser")) return "com.android.chrome";
         if (v.equals("youtube") || v.equals("you tube")) return "com.google.android.youtube";
         if (v.equals("telegram")) return "org.telegram.messenger";
         if (v.equals("instagram") || v.equals("ig")) return "com.instagram.android";
         if (v.equals("facebook") || v.equals("fb")) return "com.facebook.katana";
-        return v;
+        if (v.equals("gmail")) return "com.google.android.gm";
+        if (v.equals("google maps") || v.equals("maps")) return "com.google.android.apps.maps";
+        if (v.equals("play store") || v.equals("google play")) return "com.android.vending";
+        if (v.equals("kamera") || v.equals("camera")) return "com.android.camera2";
+        return null;
     }
 
     private static String stripPoliteSuffix(String v) {
-        return v.replaceFirst("\\s+(dong|ya|yah|deh|saja)$", "").trim();
+        String out = v;
+        out = out.replaceFirst("\\s+(dong|ya|yah|deh|saja|sekarang|dulu)$", "").trim();
+        out = out.replaceFirst("\\s+(tolong|please)$", "").trim();
+        return out;
     }
 
-    private static boolean matches(String n, String... values) {
-        for (String v : values) if (n.equals(v)) return true;
+    private static boolean hasAny(String n, String... values) {
+        for (String v : values) {
+            if (n.equals(v) || n.contains(" " + v + " ") || n.startsWith(v + " ") || n.endsWith(" " + v)) return true;
+        }
         return false;
     }
 
     private static String normalize(String s) {
-        return s.toLowerCase(Locale.ROOT).replaceAll("[^\\p{L}\\p{Nd}\\s]", " ").replaceAll("\\s+", " ").trim();
+        return s.toLowerCase(Locale.ROOT)
+                .replaceAll("[^\\p{L}\\p{Nd}\\s]", " ")
+                .replaceAll("\\s+", " ").trim();
     }
 }
