@@ -86,7 +86,8 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         speak("Baik. Mari kita daftarkan suara Anda. Setelah saya selesai berbicara, silakan ucapkan secara alami.");
         new Thread(() -> {
             try {
-                Thread.sleep(2500);
+                waitForTtsToFinish(8000L);
+                Thread.sleep(900L);
                 IMOSherpaSpeakerEncoder encoder = new IMOSherpaSpeakerEncoder(this);
                 IMOVoiceEnrollment enrollment = new IMOVoiceEnrollment(encoder, voiceIdentity);
                 enrollment.enroll(3, 5000, new IMOVoiceEnrollment.Callback() {
@@ -96,7 +97,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
                         runOnUiThread(() -> { status.setText(success ? "Voiceprint siap ✓" : "Pendaftaran suara perlu diulang"); chat.setText("IMO: " + message); refreshVoiceStatus(); speak(message); });
                     }
                 });
-            } catch (Exception e) { runOnUiThread(() -> { status.setText("Pendaftaran suara perlu diulang"); chat.setText("IMO: Enrollment gagal: " + safe(e.getMessage())); speak("Pendaftaran suara perlu diulang. Silakan coba sekali lagi."); }); }
+            } catch (Exception e) { runOnUiThread(() -> { status.setText("Pendaftaran suara perlu diulang"); chat.setText("IMO: Enrollment gagal: " + safe(e.getMessage())); speak("Pendaftaran suara perlu diulang. " + safe(e.getMessage())); }); }
         }, "IMO-Voice-Setup").start();
     }
 
@@ -149,30 +150,38 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
 
     private void speak(String text) { if (tts != null && text != null) tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, "imo"); }
 
+    private void waitForTtsToFinish(long maxMs) throws InterruptedException {
+        long end = System.currentTimeMillis() + maxMs;
+        while (tts != null && tts.isSpeaking() && System.currentTimeMillis() < end) Thread.sleep(100L);
+    }
+
     @Override public void onInit(int result) {
         if (result != TextToSpeech.SUCCESS) return;
         Locale indonesia = new Locale("id", "ID");
         int language = tts.setLanguage(indonesia);
-        // Feminine target: prefer an Indonesian female voice; fall back to a high, softer pitch only when the engine has no gender-labelled voice.
-        tts.setSpeechRate(.90f);
-        Voice female = findFemaleIndonesianVoice(tts.getVoices(), indonesia);
-        if (female != null) {
-            tts.setVoice(female);
-            tts.setPitch(1.04f);
-        } else {
-            tts.setPitch(1.08f);
-        }
+        Voice best = findBestIndonesianVoice(tts.getVoices(), indonesia);
+        if (best != null) tts.setVoice(best);
+        // Natural conversational target: avoid the artificial high-pitch fallback used previously.
+        tts.setSpeechRate(0.94f);
+        tts.setPitch(1.00f);
         if (language == TextToSpeech.LANG_MISSING_DATA || language == TextToSpeech.LANG_NOT_SUPPORTED) return;
     }
 
-    private static Voice findFemaleIndonesianVoice(Set<Voice> voices, Locale locale) {
+    private static Voice findBestIndonesianVoice(Set<Voice> voices, Locale locale) {
         if (voices == null) return null;
+        Voice best = null;
+        int bestScore = Integer.MIN_VALUE;
         for (Voice voice : voices) {
             if (voice == null || voice.getLocale() == null || !voice.getLocale().getLanguage().equals(locale.getLanguage())) continue;
             String name = voice.getName() == null ? "" : voice.getName().toLowerCase(Locale.US);
-            if (name.contains("female") || name.contains("woman") || name.contains("girl") || name.contains("wanita") || name.contains("perempuan") || name.contains("#f")) return voice;
+            int score = voice.getQuality() * 10;
+            if (voice.getQuality() >= Voice.QUALITY_VERY_HIGH) score += 80;
+            if (voice.getLatency() <= Voice.LATENCY_NORMAL) score += 20;
+            if (name.contains("female") || name.contains("woman") || name.contains("girl") || name.contains("wanita") || name.contains("perempuan") || name.contains("#f")) score += 300;
+            if (voice.isNetworkConnectionRequired()) score -= 10;
+            if (score > bestScore) { bestScore = score; best = voice; }
         }
-        return null;
+        return best;
     }
 
     @Override protected void onDestroy() { if (tts != null) { tts.stop(); tts.shutdown(); } super.onDestroy(); }
