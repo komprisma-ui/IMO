@@ -22,11 +22,35 @@ public class IMOAccessibilityService extends AccessibilityService {
     @Override public void onAccessibilityEvent(AccessibilityEvent event){}
     @Override public void onInterrupt(){}
     @Override public void onDestroy(){if(instance==this)instance=null;super.onDestroy();}
-    public boolean openApp(String packageOrLabel){String pkg=resolvePackage(packageOrLabel);if(pkg==null)return false;Intent intent=getPackageManager().getLaunchIntentForPackage(pkg);if(intent==null)return false;intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);startActivity(intent);return true;}
+
+    public String activePackage(){AccessibilityNodeInfo root=getRootInActiveWindow();return root==null?"":String.valueOf(root.getPackageName());}
+    public boolean isPackageActive(String requested){if(requested==null||requested.trim().isEmpty())return false;String pkg=resolvePackage(requested);return pkg!=null&&pkg.equals(activePackage());}
+    public boolean openApp(String packageOrLabel){String pkg=resolvePackage(packageOrLabel);if(pkg==null)return false;Intent intent=getPackageManager().getLaunchIntentForPackage(pkg);if(intent==null)return false;intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK|Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);try{startActivity(intent);return true;}catch(Exception e){return false;}}
     private String resolvePackage(String requested){if(requested==null||requested.trim().isEmpty())return null;String q=normalize(requested);if(q.contains(".")){try{if(getPackageManager().getLaunchIntentForPackage(q)!=null)return q;}catch(Exception ignored){}}for(android.content.pm.ApplicationInfo ai:getPackageManager().getInstalledApplications(0)){CharSequence label=getPackageManager().getApplicationLabel(ai);if(label!=null&&normalize(label.toString()).equals(q))return ai.packageName;}for(android.content.pm.ApplicationInfo ai:getPackageManager().getInstalledApplications(0)){CharSequence label=getPackageManager().getApplicationLabel(ai);if(label!=null&&normalize(label.toString()).contains(q))return ai.packageName;}return null;}
+
     public boolean goBack(){return performGlobalAction(GLOBAL_ACTION_BACK);}public boolean goHome(){return performGlobalAction(GLOBAL_ACTION_HOME);}public boolean openRecents(){return performGlobalAction(GLOBAL_ACTION_RECENTS);}public boolean openNotifications(){return performGlobalAction(GLOBAL_ACTION_NOTIFICATIONS);}public boolean openQuickSettings(){return performGlobalAction(GLOBAL_ACTION_QUICK_SETTINGS);}public boolean powerDialog(){return performGlobalAction(GLOBAL_ACTION_POWER_DIALOG);}public boolean splitScreen(){return performGlobalAction(GLOBAL_ACTION_TOGGLE_SPLIT_SCREEN);}
-    public String readScreen(){IMOUISnapshot snapshot=IMOUISnapshot.capture(this);String compact=snapshot.compact(5000);return compact.isEmpty()?"Tidak ada elemen UI yang terbaca.":"Saya membaca layar:\n"+compact;}public IMOUISnapshot snapshot(){return IMOUISnapshot.capture(this);}
-    public boolean clickText(String query){AccessibilityNodeInfo root=getRootInActiveWindow();AccessibilityNodeInfo node=find(root,query);if(node==null)node=findContains(root,query);if(node==null){IMOUISnapshot.Node candidate=snapshot().bestMatch(query);if(candidate!=null&&!candidate.label().isEmpty()){node=find(root,candidate.label());if(node==null)node=findContains(root,candidate.label());}}return clickNode(node);}
+    public String readScreen(){IMOUISnapshot snapshot=IMOUISnapshot.capture(this);String compact=snapshot.compact(6500);return compact.isEmpty()?"Tidak ada elemen UI yang terbaca.":"Saya membaca layar:\n"+compact;}
+    public IMOUISnapshot snapshot(){return IMOUISnapshot.capture(this);}
+
+    public boolean clickText(String query){
+        AccessibilityNodeInfo root=getRootInActiveWindow();
+        if(root==null||query==null||query.trim().isEmpty())return false;
+        AccessibilityNodeInfo node=find(root,query);
+        if(node==null)node=findContains(root,query);
+        if(node==null){
+            IMOUISnapshot.Node candidate=snapshot().bestMatch(query);
+            if(candidate!=null&&!candidate.label().isEmpty()){
+                node=find(root,candidate.label());
+                if(node==null)node=findContains(root,candidate.label());
+            }
+        }
+        if(node==null){
+            // Conservative token fallback for UI labels with extra words/punctuation.
+            String[] words=normalize(query).split(" ");
+            if(words.length>1)for(String word:words){if(word.length()<3)continue;node=findContains(root,word);if(node!=null)break;}
+        }
+        return clickNode(node);
+    }
     private boolean clickNode(AccessibilityNodeInfo node){if(node==null)return false;for(AccessibilityNodeInfo p=node;p!=null;p=p.getParent())if(p.isClickable()&&p.isEnabled())return p.performAction(AccessibilityNodeInfo.ACTION_CLICK);return false;}
     private AccessibilityNodeInfo find(AccessibilityNodeInfo node,String query){if(node==null)return null;String q=normalize(query);CharSequence text=node.getText(),desc=node.getContentDescription();if((text!=null&&normalize(text.toString()).equals(q))||(desc!=null&&normalize(desc.toString()).equals(q)))return node;for(int i=0;i<node.getChildCount();i++){AccessibilityNodeInfo found=find(node.getChild(i),query);if(found!=null)return found;}return null;}
     private AccessibilityNodeInfo findContains(AccessibilityNodeInfo node,String query){if(node==null)return null;String q=normalize(query);CharSequence text=node.getText(),desc=node.getContentDescription();if((text!=null&&normalize(text.toString()).contains(q))||(desc!=null&&normalize(desc.toString()).contains(q)))return node;for(int i=0;i<node.getChildCount();i++){AccessibilityNodeInfo found=findContains(node.getChild(i),query);if(found!=null)return found;}return null;}
