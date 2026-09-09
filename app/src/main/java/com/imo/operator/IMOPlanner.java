@@ -16,8 +16,8 @@ public final class IMOPlanner {
         if (containsAny(n,"bangunkan layar","nyalakan layar","hidupkan layar","wake screen")) { actions.add(IMOAction.of(IMOAction.Type.WAKE_SCREEN,null)); return actions; }
         if (containsAny(n,"nyalakan senter","hidupkan senter","senter nyala","flashlight on")) { actions.add(IMOAction.of(IMOAction.Type.TORCH_ON,null)); return actions; }
         if (containsAny(n,"matikan senter","senter mati","flashlight off")) { actions.add(IMOAction.of(IMOAction.Type.TORCH_OFF,null)); return actions; }
-        if (containsAny(n,"buka wifi","buka wi fi","pengaturan wifi","pengaturan wi fi","aktifkan wifi")) { actions.add(IMOAction.of(IMOAction.Type.OPEN_WIFI_SETTINGS,null)); return actions; }
-        if (containsAny(n,"buka bluetooth","pengaturan bluetooth","aktifkan bluetooth")) { actions.add(IMOAction.of(IMOAction.Type.OPEN_BLUETOOTH_SETTINGS,null)); return actions; }
+        if (containsAny(n,"buka wifi","buka wi fi","pengaturan wifi","pengaturan wi fi","aktifkan wifi","nyalakan wifi","matikan wifi","nonaktifkan wifi")) { actions.add(IMOAction.of(IMOAction.Type.OPEN_WIFI_SETTINGS,null)); return actions; }
+        if (containsAny(n,"buka bluetooth","pengaturan bluetooth","aktifkan bluetooth","nyalakan bluetooth","matikan bluetooth","nonaktifkan bluetooth")) { actions.add(IMOAction.of(IMOAction.Type.OPEN_BLUETOOTH_SETTINGS,null)); return actions; }
         if (containsAny(n,"besarkan volume","volume naik","naikkan volume","keraskan suara")) { actions.add(IMOAction.of(IMOAction.Type.VOLUME_UP,null)); return actions; }
         if (containsAny(n,"kecilkan volume","volume turun","turunkan volume","pelankan suara")) { actions.add(IMOAction.of(IMOAction.Type.VOLUME_DOWN,null)); return actions; }
         if (containsAny(n,"mute","senyapkan suara","diamkan suara")) { actions.add(IMOAction.of(IMOAction.Type.MUTE,null)); return actions; }
@@ -44,15 +44,16 @@ public final class IMOPlanner {
         return actions;
     }
     private static IMOAction actionForClick(String t){String x=normalize(t);boolean s=containsAny(x,"kirim","hapus","bayar","transfer","beli","delete","send");return s?IMOAction.sensitive(IMOAction.Type.CLICK,t):IMOAction.of(IMOAction.Type.CLICK,t);}
-    private static String extractCallNumber(String n,String q){if(!containsAny(n,"panggil","telepon","teleponi","call"))return "";String[] p={"panggil ","telepon ","teleponi ","call "};for(String x:p)if(n.startsWith(x))return q.substring(x.length()).replaceAll("[^0-9+]+","");return "";}
-    private static String appPackage(String n){if(containsAny(n,"whatsapp","wa"))return"com.whatsapp";if(containsAny(n,"chrome","google chrome","browser"))return"com.android.chrome";if(containsAny(n,"youtube","you tube"))return"com.google.android.youtube";if(containsAny(n,"telegram"))return"org.telegram.messenger";if(containsAny(n,"instagram","ig"))return"com.instagram.android";if(containsAny(n,"facebook","fb"))return"com.facebook.katana";return null;}
-    private static boolean isOpenIntent(String n){return containsAny(n,"buka","bukakan","jalankan","masuk","open","jalani")||n.equals("whatsapp")||n.equals("wa")||n.equals("chrome")||n.equals("youtube")||n.equals("telegram");}
+    private static String extractCallNumber(String n,String q){String[] p={"panggil ","telepon ","teleponi ","call "};for(String x:p)if(n.startsWith(x)){String number=q.substring(x.length()).replaceAll("[^0-9+]+","");return number.length()>=3?number:"";}return "";}
+    private static String appPackage(String n){if(hasWord(n,"whatsapp")||hasWord(n,"wa"))return"com.whatsapp";if(hasWord(n,"chrome")||hasWord(n,"browser"))return"com.android.chrome";if(hasWord(n,"youtube")||hasWord(n,"you tube"))return"com.google.android.youtube";if(hasWord(n,"telegram"))return"org.telegram.messenger";if(hasWord(n,"instagram")||hasWord(n,"ig"))return"com.instagram.android";if(hasWord(n,"facebook")||hasWord(n,"fb"))return"com.facebook.katana";return null;}
+    private static boolean isOpenIntent(String n){return containsAny(n,"buka","bukakan","jalankan","masuk","open","jalani")||hasWord(n,"whatsapp")||hasWord(n,"wa")||hasWord(n,"chrome")||hasWord(n,"youtube")||hasWord(n,"telegram")||hasWord(n,"instagram")||hasWord(n,"facebook");}
     private static boolean isBack(String n){return containsAny(n,"kembali","back","mundur");} private static boolean isHome(String n){return containsAny(n,"home","layar utama","halaman utama","beranda");}
     private static boolean isRead(String n){return containsAny(n,"baca layar","lihat layar","apa yang ada di layar","bacakan layar","baca apa yang tampil");}
     private static boolean isScrollDown(String n){return containsAny(n,"scroll bawah","scroll ke bawah","gulir bawah","gulir ke bawah","geser ke bawah");}
     private static boolean isScrollUp(String n){return containsAny(n,"scroll atas","scroll ke atas","gulir atas","gulir ke atas","geser ke atas");}
     private static String normalize(String s){return s.toLowerCase(Locale.ROOT).replaceAll("\\s+"," ").trim();}
     private static boolean containsAny(String s,String...v){for(String x:v)if(s.contains(x))return true;return false;}
+    private static boolean hasWord(String s,String word){return s.equals(word)||s.startsWith(word+" ")||s.endsWith(" "+word)||s.contains(" "+word+" ");}
     private static String extractAfter(String n,String o,String...p){for(String x:p)if(n.startsWith(x+" "))return o.substring(x.length()).trim();return"";}
     private static String extractSearchTarget(String n,String o){String[]p={"cari ","carikan ","temukan ","temuin ","search ","tolong cari ","tolong carikan "};for(String x:p)if(n.startsWith(x)){String v=o.substring(x.length()).trim();return v.replaceAll("(?i)\\s+(di|dalam|pada)\\s+(whatsapp|wa|chrome|youtube|telegram)$","").trim();}return"";}
     private static String sensitiveButton(String n){if(n.contains("hapus")||n.contains("delete"))return"hapus";if(n.contains("bayar"))return"bayar";if(n.contains("transfer"))return"transfer";if(n.contains("beli"))return"beli";return"kirim";}
