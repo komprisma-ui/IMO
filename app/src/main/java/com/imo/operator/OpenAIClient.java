@@ -12,35 +12,49 @@ import java.util.concurrent.TimeUnit;
 
 public final class OpenAIClient {
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
-    private final OkHttpClient http = new OkHttpClient.Builder().connectTimeout(20, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS).build();
+    private final OkHttpClient http = new OkHttpClient.Builder().connectTimeout(20, TimeUnit.SECONDS).readTimeout(90, TimeUnit.SECONDS).build();
     private final String apiKey;
     private final String model;
 
     public OpenAIClient(String apiKey, String model) { this.apiKey = apiKey; this.model = model; }
 
-    public String plan(String command, String screen) throws Exception {
+    public String plan(String command, String screen, String imageBase64Jpeg) throws Exception {
         if (apiKey == null || apiKey.trim().isEmpty()) throw new IllegalStateException("API key belum diatur.");
         JSONObject body = new JSONObject();
         body.put("model", model);
         body.put("store", false);
-        body.put("instructions", "Kamu adalah LUNA, AI assistant pengendali Android. Jangan bertindak seperti chatbot biasa. Tujuanmu adalah memahami perintah pengguna, mengamati snapshot layar, lalu menghasilkan rencana tindakan perangkat yang aman. Gunakan bahasa Indonesia. Jangan pernah meminta pengguna melakukan langkah yang sebenarnya dapat dilakukan operator. Tindakan sensitif seperti mengirim pesan, menghapus, membeli, transfer, atau mengubah keamanan harus diberi confirm=true. Untuk percakapan biasa tanpa aksi, actions harus kosong.");
-        body.put("input", "PERINTAH PENGGUNA:\n" + command + "\n\nSNAPSHOT LAYAR:\n" + screen);
+        body.put("instructions", "Kamu adalah LUNA, AI operator Android. Kamu bukan chatbot biasa. Pahami tujuan pengguna, amati pohon accessibility DAN screenshot layar, lalu buat rencana tindakan yang benar-benar dapat dijalankan. Prioritaskan elemen accessibility; gunakan CLICK_POINT bila elemen visual tidak tersedia di accessibility tree. Gunakan bahasa Indonesia. Jangan mengarang koordinat jika tidak terlihat jelas. Tindakan sensitif seperti mengirim pesan, menghapus data, membeli, transfer uang, mengubah keamanan, atau tindakan yang berdampak permanen wajib confirm=true. Untuk pertanyaan/perintah yang tidak membutuhkan kontrol perangkat, actions kosong. Maksimal 12 langkah per rencana. Setelah tindakan, rencana harus berhenti pada keadaan yang dapat diverifikasi.");
+
+        JSONArray input = new JSONArray();
+        JSONObject message = new JSONObject();
+        message.put("role", "user");
+        JSONArray content = new JSONArray();
+        content.put(new JSONObject().put("type", "input_text").put("text", "PERINTAH PENGGUNA:\n" + command + "\n\nACCESSIBILITY SNAPSHOT:\n" + screen));
+        if (imageBase64Jpeg != null && !imageBase64Jpeg.isEmpty()) {
+            content.put(new JSONObject().put("type", "input_image").put("image_url", "data:image/jpeg;base64," + imageBase64Jpeg));
+        }
+        message.put("content", content);
+        input.put(message);
+        body.put("input", input);
+
         JSONObject text = new JSONObject();
         JSONObject format = new JSONObject();
         format.put("type", "json_schema"); format.put("name", "device_plan"); format.put("strict", true);
-        JSONObject schema = new JSONObject(); schema.put("type", "object");
+        JSONObject schema = new JSONObject().put("type", "object");
         JSONObject props = new JSONObject();
         props.put("speak", new JSONObject().put("type", "string"));
         props.put("confirm", new JSONObject().put("type", "boolean"));
         JSONObject action = new JSONObject().put("type", "object");
         JSONObject ap = new JSONObject();
-        ap.put("type", new JSONObject().put("type", "string").put("enum", new JSONArray(new String[]{"OPEN_APP","CLICK_TEXT","CLICK_DESC","TYPE","SCROLL","BACK","HOME","RECENTS","WAIT","OPEN_URL"})));
+        ap.put("type", new JSONObject().put("type", "string").put("enum", new JSONArray(new String[]{"OPEN_APP","CLICK_TEXT","CLICK_DESC","CLICK_POINT","TYPE","SCROLL","BACK","HOME","RECENTS","WAIT","OPEN_URL"})));
         ap.put("value", new JSONObject().put("type", "string"));
         ap.put("package", new JSONObject().put("type", "string"));
         ap.put("label", new JSONObject().put("type", "string"));
         ap.put("direction", new JSONObject().put("type", "string"));
         ap.put("delayMs", new JSONObject().put("type", "integer"));
-        action.put("properties", ap).put("required", new JSONArray(new String[]{"type","value","package","label","direction","delayMs"})).put("additionalProperties", false);
+        ap.put("x", new JSONObject().put("type", "number"));
+        ap.put("y", new JSONObject().put("type", "number"));
+        action.put("properties", ap).put("required", new JSONArray(new String[]{"type","value","package","label","direction","delayMs","x","y"})).put("additionalProperties", false);
         props.put("actions", new JSONObject().put("type", "array").put("items", action));
         schema.put("properties", props).put("required", new JSONArray(new String[]{"speak","confirm","actions"})).put("additionalProperties", false);
         format.put("schema", schema); text.put("format", format); body.put("text", text);
@@ -52,7 +66,9 @@ public final class OpenAIClient {
             if (!r.isSuccessful()) throw new IOException("OpenAI HTTP " + r.code() + ": " + (r.body() == null ? "" : r.body().string()));
             String raw = r.body() == null ? "" : r.body().string();
             JSONObject root = new JSONObject(raw);
-            return findOutputText(root);
+            String result = findOutputText(root);
+            if (result == null || result.trim().isEmpty()) throw new IOException("OpenAI tidak mengembalikan rencana tindakan.");
+            return result;
         }
     }
 
