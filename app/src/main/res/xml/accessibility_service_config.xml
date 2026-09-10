@@ -4,4 +4,4 @@
     android:notificationTimeout="100"
     android:canRetrieveWindowContent="true"
     android:accessibilityFlags="flagReportViewIds|flagRetrieveInteractiveWindows"
-    android:description="LUNA membaca struktur UI yang sedang aktif dan menjalankan tindakan atas perintah pengguna." />
+    android:description="@string/accessibility_description" />
