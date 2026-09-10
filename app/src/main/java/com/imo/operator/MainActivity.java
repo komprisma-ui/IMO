@@ -1,46 +1,97 @@
 package com.imo.operator;
 
-import android.Manifest;
-import android.app.Activity;
-import android.app.AlertDialog;
-import android.content.Intent;
-import android.content.pm.PackageManager;
-import android.os.Build;
-import android.os.Bundle;
+import android.app.*;
+import android.content.*;
+import android.os.*;
 import android.provider.Settings;
+import android.speech.RecognizerIntent;
+import android.speech.SpeechRecognizer;
 import android.speech.tts.TextToSpeech;
-import android.view.Gravity;
-import android.widget.Button;
-import android.widget.EditText;
-import android.widget.LinearLayout;
-import android.widget.TextView;
-import java.util.Locale;
+import android.view.*;
+import android.widget.*;
+import org.json.JSONArray;
+import org.json.JSONObject;
+import java.util.*;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 
-/** IMO operator UI: unrestricted voice commands plus optional front-camera visual context. */
-public class MainActivity extends Activity implements TextToSpeech.OnInitListener {
-    private static final int REQ_AUDIO=10,REQ_DEVICE=11,REQ_NOTIFY=12,REQ_VISION=13; private TextView status,chat,voiceStatus,aiStatus; private Button mic,enrollButton,conversationButton; private TextToSpeech tts; private IMOEngine engine; private IMOConfirmation confirmation; private IMOMemory memory; private IMOVoiceIdentity voiceIdentity; private IMOConversationBrain brain; private volatile boolean voiceBusy,enrollmentBusy,conversationMode; private boolean pendingEnrollment; private String pendingCommand; private boolean pendingCameraPermission,pendingCallPermission;
-    @Override public void onCreate(Bundle state){super.onCreate(state);buildUi();memory=new IMOMemory(this);confirmation=new IMOConfirmation();voiceIdentity=new IMOVoiceIdentity(this);brain=new IMOConversationBrain(this);tts=new TextToSpeech(this,this);refreshStatuses();if(checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED)requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO},REQ_AUDIO);}
-    @Override protected void onResume(){super.onResume();if(confirmation==null)confirmation=new IMOConfirmation();engine=new IMOEngine(IMOAccessibilityService.instance,confirmation,this);refreshStatuses();}
-    @Override public void onRequestPermissionsResult(int code,String[]p,int[]g){super.onRequestPermissionsResult(code,p,g);if(code==REQ_AUDIO){boolean ok=checkSelfPermission(Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED;if(ok&&pendingEnrollment){pendingEnrollment=false;enrollVoiceInternal();}else if(!ok&&pendingEnrollment){pendingEnrollment=false;showEnrollmentPermissionFailure();}return;}if(code==REQ_NOTIFY){if(conversationMode)startConversationService();return;}if(code==REQ_VISION){if(conversationMode)startConversationService();return;}if(code!=REQ_DEVICE||pendingCommand==null)return;boolean cam=!pendingCameraPermission||checkSelfPermission(Manifest.permission.CAMERA)==PackageManager.PERMISSION_GRANTED;boolean call=!pendingCallPermission||checkSelfPermission(Manifest.permission.CALL_PHONE)==PackageManager.PERMISSION_GRANTED;String cmd=pendingCommand;pendingCommand=null;pendingCameraPermission=false;pendingCallPermission=false;if(!cam||!call){status.setText("Izin perangkat belum diberikan.");speak("Izin perangkat belum diberikan. Saya tidak akan melewati keamanan Android.");return;}executePlannedCommand(cmd);}
-    private void buildUi(){LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(32,38,32,28);TextView title=new TextView(this);title.setText("IMO");title.setTextSize(34);title.setGravity(Gravity.CENTER);root.addView(title);TextView sub=new TextView(this);sub.setText("Intelligent Mobile Operator • JARVIS Core");sub.setGravity(Gravity.CENTER);root.addView(sub);status=new TextView(this);status.setText("Siap. Saya menunggu perintah.");status.setTextSize(17);status.setPadding(0,22,0,14);root.addView(status);chat=new TextView(this);chat.setText("IMO: Siap membantu.");chat.setTextSize(18);root.addView(chat);voiceStatus=new TextView(this);voiceStatus.setTextSize(15);voiceStatus.setPadding(0,12,0,5);root.addView(voiceStatus);aiStatus=new TextView(this);aiStatus.setTextSize(14);root.addView(aiStatus);mic=new Button(this);mic.setText("🎙 MULAI BICARA");mic.setOnClickListener(v->listen());root.addView(mic);conversationButton=new Button(this);conversationButton.setText("🗣️ MODE DIALOG: MATI");conversationButton.setOnClickListener(v->toggleConversation());root.addView(conversationButton);enrollButton=new Button(this);enrollButton.setText("🔐 DAFTARKAN SUARA SAYA (OPSIONAL)");enrollButton.setOnClickListener(v->enrollVoice());root.addView(enrollButton);Button ai=new Button(this);ai.setText("🧠 KONFIGURASI AI CERDAS");ai.setOnClickListener(v->configureAi());root.addView(ai);Button accessibility=new Button(this);accessibility.setText("⚙ AKTIFKAN KENDALI HP");accessibility.setOnClickListener(v->startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));root.addView(accessibility);setContentView(root);}
-    private void refreshStatuses(){refreshVoiceStatus();if(aiStatus!=null)aiStatus.setText(brain!=null&&brain.aiConfigured()?"🧠 AI reasoning: AKTIF — "+brain.ai().model():"🧠 AI reasoning: LOKAL / BELUM DIKONFIGURASI");}
-    private void refreshVoiceStatus(){if(voiceStatus==null||voiceIdentity==null)return;voiceStatus.setText(voiceIdentity.isEnrolled()?"🔐 Voiceprint: TERDAFTAR — opsional":"🔓 Voiceprint: OPSIONAL — semua suara dapat berbicara");}
-    private void toggleConversation(){if(enrollmentBusy)return;conversationMode=!conversationMode;conversationButton.setText(conversationMode?"🗣️ MODE DIALOG: AKTIF":"🗣️ MODE DIALOG: MATI");if(conversationMode){if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED){requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},REQ_NOTIFY);return;}if(checkSelfPermission(Manifest.permission.CAMERA)!=PackageManager.PERMISSION_GRANTED){status.setText("Izin kamera diperlukan agar IMO dapat menggunakan mata visual.");requestPermissions(new String[]{Manifest.permission.CAMERA},REQ_VISION);return;}startConversationService();}else{stopConversationService();speak("Mode dialog dimatikan.");}}
-    private void startConversationService(){try{Intent i=new Intent(this,IMOConversationService.class).setAction(IMOConversationService.ACTION_START);if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);status.setText("Mode dialog aktif — suara + mata kamera depan aktif.");}catch(Exception e){conversationMode=false;conversationButton.setText("🗣️ MODE DIALOG: MATI");speak("Mode dialog tidak dapat dimulai. "+safe(e.getMessage()));}}
-    private void stopConversationService(){try{stopService(new Intent(this,IMOConversationService.class));}catch(Exception ignored){}}
-    private void configureAi(){LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(30,10,30,0);EditText endpoint=new EditText(this);endpoint.setHint("Endpoint Responses API");endpoint.setText(brain.ai().endpoint());box.addView(endpoint);EditText model=new EditText(this);model.setHint("Model");model.setText(brain.ai().model());box.addView(model);EditText key=new EditText(this);key.setHint("API key");key.setInputType(0x00000081);box.addView(key);new AlertDialog.Builder(this).setTitle("AI Cerdas IMO").setMessage("Masukkan endpoint, model, dan API key. Kunci disimpan menggunakan Android Keystore.").setView(box).setPositiveButton("SIMPAN",(d,w)->{try{brain.ai().configure(endpoint.getText().toString(),model.getText().toString(),key.getText().toString());refreshStatuses();speak("AI reasoning aktif. Saya siap bekerja lebih cerdas.");}catch(Exception e){speak("Konfigurasi AI gagal. "+safe(e.getMessage()));}}).setNegativeButton("BATAL",null).setNeutralButton("HAPUS AI",(d,w)->{brain.ai().clear();refreshStatuses();speak("Konfigurasi AI dihapus. Saya kembali ke mode lokal.");}).show();}
-    private void enrollVoice(){if(enrollmentBusy){status.setText("Pendaftaran suara sedang berjalan…");return;}if(checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){pendingEnrollment=true;status.setText("Meminta izin mikrofon…");requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO},REQ_AUDIO);return;}enrollVoiceInternal();}
-    private void enrollVoiceInternal(){if(enrollmentBusy)return;enrollmentBusy=true;enrollButton.setEnabled(false);status.setText("Siap. Ikuti instruksi dengan suara alami.");speak("Baik. Mari kita daftarkan suara Anda. Setelah saya selesai berbicara, silakan ucapkan secara alami.");new Thread(()->{try{waitForTtsToFinish(8000);Thread.sleep(900);IMOSherpaSpeakerEncoder encoder=new IMOSherpaSpeakerEncoder(getApplicationContext());IMOVoiceEnrollment enrollment=new IMOVoiceEnrollment(encoder,voiceIdentity);enrollment.enroll(3,5000,new IMOVoiceEnrollment.Callback(){public void onProgress(String m){runOnUiThread(()->status.setText(m));}public void onFinished(boolean success,String m){encoder.release();runOnUiThread(()->{enrollmentBusy=false;enrollButton.setEnabled(true);status.setText(success?"Voiceprint siap ✓":"Pendaftaran suara perlu diulang");chat.setText("IMO: "+m);refreshVoiceStatus();speak(m);});}});}catch(Exception e){runOnUiThread(()->{enrollmentBusy=false;enrollButton.setEnabled(true);status.setText("Pendaftaran suara perlu diulang");chat.setText("IMO: Enrollment gagal: "+safe(e.getMessage()));speak("Pendaftaran suara perlu diulang. "+safe(e.getMessage()));});}},"IMO-Voice-Setup").start();}
-    private void showEnrollmentPermissionFailure(){status.setText("Izin mikrofon belum diberikan");speak("Pendaftaran suara membutuhkan izin mikrofon.");}
-    private void listen(){if(conversationMode){speak("Mode dialog sedang aktif. Saya sudah mendengarkan melalui layanan latar depan.");return;}if(voiceBusy||enrollmentBusy)return;if(checkSelfPermission(Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO},REQ_AUDIO);return;}voiceBusy=true;mic.setText("🎙 MENDENGARKAN…");IMOVoiceCommandPipeline pipeline=new IMOVoiceCommandPipeline(this,voiceIdentity,.72f);boolean started;try{started=pipeline.start(5000,new IMOVoiceCommandPipeline.Callback(){public void onState(String m){runOnUiThread(()->status.setText(m));}public void onAccepted(short[]pcm,int rate){processSpeech(pcm,rate);}public void onRejected(String m){voiceBusy=false;runOnUiThread(()->{mic.setText("🎙 MULAI BICARA");status.setText("Akses suara ditolak.");chat.setText("IMO: "+m);speak(m);});}public void onError(String m){voiceBusy=false;runOnUiThread(()->{mic.setText("🎙 MULAI BICARA");status.setText("Pipeline suara berhenti aman.");chat.setText("IMO: "+m);});}});}catch(Exception e){started=false;}if(!started){voiceBusy=false;mic.setText("🎙 MULAI BICARA");status.setText("Tidak dapat memulai pipeline suara.");}}
-    private void processSpeech(short[]pcm,int rate){new Thread(()->{IMOLocalAsr asr=null;try{runOnUiThread(()->status.setText("Suara diterima ✓. Memahami…"));asr=new IMOLocalAsr(MainActivity.this);String text=asr.transcribe(pcm,rate).trim();if(text.isEmpty()){runOnUiThread(()->{status.setText("Ucapan belum terbaca.");chat.setText("IMO: Saya belum menangkapnya.");speak("Saya belum menangkapnya. Silakan ulangi.");});return;}runOnUiThread(()->handleRecognized(text));}catch(Exception e){runOnUiThread(()->{status.setText("ASR lokal gagal.");speak("Saya belum dapat memahami ucapan itu.");});}finally{if(asr!=null)asr.release();voiceBusy=false;runOnUiThread(()->mic.setText("🎙 MULAI BICARA"));}},"IMO-ASR").start();}
-    private void handleRecognized(String text){chat.setText("Anda: "+text);status.setText("Menganalisis maksud…");if(engine!=null&&engine.hasPendingConfirmation()&&(text.toLowerCase(Locale.ROOT).contains("ya")||text.toLowerCase(Locale.ROOT).contains("batal")||text.toLowerCase(Locale.ROOT).contains("tidak"))){executePlannedCommand(text);return;}if(brain.aiConfigured()){new Thread(()->{try{String screen=IMOAccessibilityService.instance==null?"":IMOAccessibilityService.instance.readScreen();IMOConversationBrain.Reply r=brain.think(text,screen);runOnUiThread(()->{chat.setText("Anda: "+text+"\nIMO: "+r.text);if(r.execute){status.setText("Menjalankan rencana AI…");executeWithRequiredPermissions(r.text);}else{status.setText("IMO siap mendengarkan.");speak(r.text);}});}catch(Exception e){runOnUiThread(()->{status.setText("AI tidak tersedia — mode lokal aktif.");executeLocalCommand(text);});}},"IMO-AI").start();}else executeLocalCommand(text);}
-    private void executeLocalCommand(String clean){IMOJarvisCore.Decision decision=IMOJarvisCore.understand(clean);String plannerInput=IMOJarvisCore.normalizeForPlanner(clean);if(decision.intent==IMOJarvisCore.Intent.NONE&&decision.confidence<.55f){chat.setText("Anda: "+clean+"\nIMO: Saya belum cukup yakin memahami maksudnya.");status.setText("Perlu klarifikasi");speak("Saya belum cukup yakin dengan maksud perintah itu. Tolong jelaskan sedikit lagi.");memory.remember(clean,"Klarifikasi diperlukan");return;}chat.setText("Anda: "+clean+"\nIMO: Saya pahami. Mulai bekerja…");status.setText("Menganalisis tujuan dan menyusun langkah…");executeWithRequiredPermissions(plannerInput);}
-    private void executeWithRequiredPermissions(String plannerInput){String lower=plannerInput.toLowerCase(Locale.ROOT);boolean needsCamera=lower.contains("senter")||lower.contains("flashlight")||lower.contains("torch");boolean needsCall=lower.startsWith("panggil ")||lower.startsWith("telepon ")||lower.startsWith("call ");pendingCommand=plannerInput;pendingCameraPermission=needsCamera;pendingCallPermission=needsCall;if(needsCamera&&checkSelfPermission(Manifest.permission.CAMERA)!=PackageManager.PERMISSION_GRANTED){status.setText("Meminta izin kamera untuk lampu senter…");requestPermissions(new String[]{Manifest.permission.CAMERA},REQ_DEVICE);return;}if(needsCall&&checkSelfPermission(Manifest.permission.CALL_PHONE)!=PackageManager.PERMISSION_GRANTED){status.setText("Meminta izin telepon…");requestPermissions(new String[]{Manifest.permission.CALL_PHONE},REQ_DEVICE);return;}pendingCommand=null;pendingCameraPermission=false;pendingCallPermission=false;executePlannedCommand(plannerInput);}
-    private void executePlannedCommand(String plannerInput){engine=new IMOEngine(IMOAccessibilityService.instance,confirmation,this);engine.execute(plannerInput,new IMOEngine.Callback(){public void onProgress(String m){runOnUiThread(()->status.setText(m));}public void onConfirmationRequired(String m){memory.remember(plannerInput,m);runOnUiThread(()->{status.setText("Menunggu konfirmasi");chat.setText("IMO: "+m);speak(m);});}public void onFinished(String m,boolean success){memory.remember(plannerInput,m);if(brain!=null)brain.rememberExecution(m);runOnUiThread(()->{status.setText(success?"Selesai ✓":"Belum selesai");chat.setText("IMO: "+m);speak(m);});}});}
-    private void speak(String text){if(tts!=null&&text!=null)tts.speak(text,TextToSpeech.QUEUE_FLUSH,null,"imo");}
-    private void waitForTtsToFinish(long maxMs)throws InterruptedException{long end=System.currentTimeMillis()+maxMs;while(tts!=null&&tts.isSpeaking()&&System.currentTimeMillis()<end)Thread.sleep(100);}
-    @Override public void onInit(int result){if(result!=TextToSpeech.SUCCESS)return;Locale id=new Locale("id","ID");int language=tts.setLanguage(id);VoiceHelper.applyBest(tts,id);tts.setSpeechRate(.95f);tts.setPitch(.90f);if(language==TextToSpeech.LANG_MISSING_DATA||language==TextToSpeech.LANG_NOT_SUPPORTED)return;}
-    @Override protected void onDestroy(){if(tts!=null){tts.stop();tts.shutdown();}super.onDestroy();}
-    private static String safe(String s){return s==null||s.trim().isEmpty()?"kesalahan tidak diketahui":s;}
+public class MainActivity extends Activity {
+    private EditText command, status;
+    private TextView state;
+    private Button mic, send, stop, key, access;
+    private TextToSpeech tts;
+    private SpeechRecognizer recognizer;
+    private SecureKeyStore keyStore;
+    private final ExecutorService worker = Executors.newSingleThreadExecutor();
+    private volatile boolean running;
+
+    @Override public void onCreate(Bundle b) { super.onCreate(b); keyStore=new SecureKeyStore(this); buildUi();
+        tts=new TextToSpeech(this, s -> { if(s==TextToSpeech.SUCCESS) tts.setLanguage(new Locale("id","ID")); });
+        if (SpeechRecognizer.isRecognitionAvailable(this)) recognizer=SpeechRecognizer.createSpeechRecognizer(this);
+    }
+
+    private void buildUi() {
+        LinearLayout root=new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setPadding(28,24,28,20);
+        TextView title=new TextView(this); title.setText("LUNA\nAI ANDROID DEVICE CONTROL"); title.setTextSize(24); title.setPadding(0,0,0,14); root.addView(title);
+        state=new TextView(this); state.setText("● Siap — operator belum aktif"); state.setTextSize(16); root.addView(state);
+        status=new EditText(this); status.setHint("Status / hasil eksekusi"); status.setMinLines(5); status.setGravity(Gravity.TOP); status.setEnabled(false); root.addView(status,new LinearLayout.LayoutParams(-1,0,1));
+        command=new EditText(this); command.setHint("Katakan/perintahkan: buka WhatsApp, cari Budi..."); command.setSingleLine(false); root.addView(command,new LinearLayout.LayoutParams(-1,120));
+        LinearLayout row=new LinearLayout(this); row.setOrientation(LinearLayout.HORIZONTAL);
+        send=button("JALANKAN"); mic=button("🎙 MIC"); stop=button("■ STOP"); row.addView(send,new LinearLayout.LayoutParams(0,60,2)); row.addView(mic,new LinearLayout.LayoutParams(0,60,1)); row.addView(stop,new LinearLayout.LayoutParams(0,60,1)); root.addView(row);
+        LinearLayout row2=new LinearLayout(this); access=button("AKTIFKAN ACCESSIBILITY"); key=button("API KEY"); row2.addView(access,new LinearLayout.LayoutParams(0,60,2)); row2.addView(key,new LinearLayout.LayoutParams(0,60,1)); root.addView(row2);
+        setContentView(root);
+        send.setOnClickListener(v->runCommand(command.getText().toString())); stop.setOnClickListener(v->stopAll()); access.setOnClickListener(v->startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))); key.setOnClickListener(v->showKeyDialog()); mic.setOnClickListener(v->listen());
+        refreshState();
+    }
+    private Button button(String s){ Button b=new Button(this); b.setText(s); return b; }
+    private void refreshState(){ boolean on=LunaAccessibilityService.get()!=null; state.setText(on?"● Operator Android AKTIF":"● Accessibility belum aktif"); }
+    @Override protected void onResume(){super.onResume();refreshState();}
+    private void showKeyDialog(){
+        EditText e=new EditText(this); e.setHint("sk-… (jangan kirim ke chat)"); e.setInputType(129);
+        try { String old=keyStore.load(); if(old!=null&&!old.isEmpty()) e.setText(old); } catch(Exception ignored){}
+        new AlertDialog.Builder(this).setTitle("OpenAI API Key").setMessage("Kunci disimpan terenkripsi di perangkat. Jangan commit atau membagikannya. Untuk APK produksi, gunakan backend.").setView(e)
+            .setPositiveButton("Simpan",(d,w)->{try{keyStore.save(e.getText().toString().trim()); setStatus("API key tersimpan lokal.");}catch(Exception ex){setStatus("Gagal menyimpan key: "+ex.getMessage());}})
+            .setNegativeButton("Hapus",(d,w)->keyStore.clear()).setNeutralButton("Batal",null).show();
+    }
+    private void listen(){
+        if(recognizer==null){setStatus("Speech recognition tidak tersedia.");return;}
+        Intent i=new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH); i.putExtra(RecognizerIntent.EXTRA_LANGUAGE,"id-ID"); i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+        recognizer.setRecognitionListener(new android.speech.RecognitionListener(){
+            public void onReadyForSpeech(Bundle p){setStatus("Mendengarkan…");} public void onBeginningOfSpeech(){} public void onRmsChanged(float r){} public void onBufferReceived(byte[] b){} public void onEndOfSpeech(){}
+            public void onError(int e){setStatus("Voice error: "+e);} public void onResults(Bundle r){ArrayList<String> a=r.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);if(a!=null&&!a.isEmpty()){command.setText(a.get(0));runCommand(a.get(0));}}
+            public void onPartialResults(Bundle r){} public void onEvent(int t,Bundle p){}
+        }); recognizer.startListening(i);
+    }
+    private void runCommand(String text){
+        if(text==null||text.trim().isEmpty()) return; if(running){setStatus("Luna masih menjalankan tugas. Tekan STOP bila ingin menghentikan.");return;}
+        final LunaAccessibilityService svc=LunaAccessibilityService.get(); if(svc==null){setStatus("Aktifkan Accessibility Service LUNA terlebih dahulu.");return;}
+        final String cmd=text.trim(); running=true; send.setEnabled(false); setStatus("Luna mengamati layar dan menyusun rencana…");
+        worker.submit(()->{
+            try{
+                String api=keyStore.load(); OpenAIClient ai=new OpenAIClient(api,"gpt-5.6-luna"); String plan=ai.plan(cmd,svc.snapshot());
+                JSONObject p=new JSONObject(plan); boolean confirm=p.optBoolean("confirm",false); String speak=p.optString("speak","");
+                runOnUiThread(()->{ if(!speak.isEmpty()) say(speak); });
+                if(confirm){ runOnUiThread(()->confirmAndExecute(p)); }
+                else executePlan(p);
+            }catch(Exception e){runOnUiThread(()->setStatus("Gagal: "+e.getMessage()));}
+            finally{if(!running){ } else {running=false;runOnUiThread(()->send.setEnabled(true));}}
+        });
+    }
+    private void confirmAndExecute(JSONObject p){ new AlertDialog.Builder(this).setTitle("Konfirmasi tindakan Luna").setMessage(p.optString("speak","Luna akan melakukan tindakan pada perangkat."))
+        .setNegativeButton("Batal",(d,w)->{running=false;send.setEnabled(true);}).setPositiveButton("Lanjutkan",(d,w)->worker.submit(()->executePlan(p))).show(); }
+    private void executePlan(JSONObject p){
+        LunaAccessibilityService svc=LunaAccessibilityService.get(); if(svc==null){running=false;return;} svc.resumeNow(); JSONArray a=p.optJSONArray("actions"); if(a==null){running=false;return;}
+        DeviceExecutor device=new DeviceExecutor(this);
+        for(int i=0;i<a.length()&&running&&!svc.isStopped();i++){
+            try{JSONObject x=a.getJSONObject(i);String type=x.optString("type");boolean ok=false;
+                if("OPEN_APP".equals(type)) ok=device.openApp(x.optString("package"),x.optString("label")); else if("CLICK_TEXT".equals(type)) ok=svc.clickText(x.optString("value")); else if("CLICK_DESC".equals(type)) ok=svc.clickDescription(x.optString("value")); else if("TYPE".equals(type)) ok=svc.typeText(x.optString("value")); else if("SCROLL".equals(type)) ok=svc.scroll(x.optString("direction")); else if("BACK".equals(type)) ok=svc.globalBack(); else if("HOME".equals(type)) ok=svc.globalHome(); else if("RECENTS".equals(type)) ok=svc.globalRecents(); else if("OPEN_URL".equals(type)) ok=device.openUrl(x.optString("value")); else if("WAIT".equals(type)){device.delay(x.optLong("delayMs",500));ok=true;}
+                setStatus("Langkah "+(i+1)+": "+type+" → "+(ok?"berhasil":"gagal")); device.delay(Math.max(120,x.optLong("delayMs",250)));
+            }catch(Exception e){setStatus("Langkah gagal: "+e.getMessage());}
+        }
+        if(running) setStatus("Tugas selesai. Luna memverifikasi keadaan layar."); running=false; runOnUiThread(()->send.setEnabled(true));
+    }
+    private void stopAll(){running=false;LunaAccessibilityService s=LunaAccessibilityService.get();if(s!=null)s.stopNow();setStatus("STOP — eksekusi Luna dihentikan.");send.setEnabled(true);}
+    private void say(String s){if(tts!=null&&!s.isEmpty())tts.speak(s,TextToSpeech.QUEUE_FLUSH,null,"LUNA");setStatus(s);}
+    private void setStatus(String s){runOnUiThread(()->status.setText(s));}
+    @Override protected void onDestroy(){running=false;if(recognizer!=null)recognizer.destroy();if(tts!=null)tts.shutdown();worker.shutdownNow();super.onDestroy();}
 }
