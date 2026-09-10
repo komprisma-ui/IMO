@@ -76,28 +76,32 @@ public class LunaAccessibilityService extends AccessibilityService {
         } catch (Throwable t) { callback.onResult(null); }
     }
 
-    public interface ScreenCallback { void onResult(String base64Png); }
+    public interface ScreenCallback { void onResult(String base64Jpeg); }
 
-    private static final class TakeScreenshotCallbackCompat extends AccessibilityService.TakeScreenshotCallback {
+    private static final class TakeScreenshotCallbackCompat implements AccessibilityService.TakeScreenshotCallback {
         private final ScreenCallback callback;
         TakeScreenshotCallbackCompat(ScreenCallback callback) { this.callback = callback; }
+
         @Override public void onSuccess(AccessibilityService.ScreenshotResult result) {
             try {
-                Bitmap b = Bitmap.wrapHardwareBuffer(result.getHardwareBuffer(), result.getColorSpace());
-                if (b == null) { callback.onResult(null); return; }
-                Bitmap copy = b.copy(Bitmap.Config.ARGB_8888, false);
-                b.recycle();
+                Bitmap hardware = Bitmap.wrapHardwareBuffer(result.getHardwareBuffer(), result.getColorSpace());
+                if (hardware == null) { callback.onResult(null); return; }
+                Bitmap copy = hardware.copy(Bitmap.Config.ARGB_8888, false);
+                hardware.recycle();
+                if (copy == null) { callback.onResult(null); return; }
                 ByteArrayOutputStream out = new ByteArrayOutputStream();
                 copy.compress(Bitmap.CompressFormat.JPEG, 70, out);
                 copy.recycle();
                 callback.onResult(android.util.Base64.encodeToString(out.toByteArray(), android.util.Base64.NO_WRAP));
             } catch (Throwable t) { callback.onResult(null); }
         }
+
         @Override public void onFailure(int errorCode) { callback.onResult(null); }
     }
 
     public boolean clickText(String value) { return clickMatch(value, false); }
     public boolean clickDescription(String value) { return clickMatch(value, true); }
+
     private boolean clickMatch(String value, boolean descOnly) {
         if (stopped || value == null || value.trim().isEmpty()) return false;
         AccessibilityNodeInfo root = getRootInActiveWindow();
@@ -137,29 +141,38 @@ public class LunaAccessibilityService extends AccessibilityService {
         AccessibilityNodeInfo target = findFocusedEditable(root);
         if (target == null) target = findEditable(root);
         if (target == null) return false;
-        Bundle b = new Bundle(); b.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text == null ? "" : text);
+        Bundle b = new Bundle();
+        b.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text == null ? "" : text);
         return target.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, b);
     }
 
     private AccessibilityNodeInfo findFocusedEditable(AccessibilityNodeInfo n) {
         if (n == null) return null;
         if (n.isEditable() && n.isFocused() && n.isVisibleToUser()) return n;
-        for (int i = 0; i < n.getChildCount(); i++) { AccessibilityNodeInfo x = findFocusedEditable(n.getChild(i)); if (x != null) return x; }
+        for (int i = 0; i < n.getChildCount(); i++) {
+            AccessibilityNodeInfo x = findFocusedEditable(n.getChild(i));
+            if (x != null) return x;
+        }
         return null;
     }
 
     private AccessibilityNodeInfo findEditable(AccessibilityNodeInfo n) {
         if (n == null) return null;
         if (n.isEditable() && n.isVisibleToUser()) return n;
-        for (int i = 0; i < n.getChildCount(); i++) { AccessibilityNodeInfo x = findEditable(n.getChild(i)); if (x != null) return x; }
+        for (int i = 0; i < n.getChildCount(); i++) {
+            AccessibilityNodeInfo x = findEditable(n.getChild(i));
+            if (x != null) return x;
+        }
         return null;
     }
 
     public boolean scroll(String direction) {
         if (stopped) return false;
-        AccessibilityNodeInfo root = getRootInActiveWindow(); if (root == null) return false;
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        if (root == null) return false;
         return scrollNode(root, direction == null ? "DOWN" : direction.toUpperCase(Locale.ROOT));
     }
+
     private boolean scrollNode(AccessibilityNodeInfo n, String dir) {
         if (n == null) return false;
         if (n.isScrollable() && n.isVisibleToUser()) {
