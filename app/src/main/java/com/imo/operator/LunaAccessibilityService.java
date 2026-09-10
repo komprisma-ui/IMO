@@ -2,13 +2,20 @@ package com.imo.operator;
 
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.AccessibilityServiceInfo;
+import android.accessibilityservice.GestureDescription;
+import android.graphics.Bitmap;
+import android.graphics.Path;
 import android.graphics.Rect;
+import android.os.Build;
 import android.os.Bundle;
+import android.view.Display;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
+import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.Executor;
 
 public class LunaAccessibilityService extends AccessibilityService {
     private static volatile LunaAccessibilityService instance;
@@ -16,6 +23,7 @@ public class LunaAccessibilityService extends AccessibilityService {
 
     @Override public void onServiceConnected() {
         instance = this;
+        stopped = false;
         AccessibilityServiceInfo info = getServiceInfo();
         if (info == null) info = new AccessibilityServiceInfo();
         info.eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED |
@@ -41,11 +49,11 @@ public class LunaAccessibilityService extends AccessibilityService {
         if (root == null) return "No active accessibility window.";
         StringBuilder out = new StringBuilder();
         appendNode(root, out, 0);
-        return out.length() > 9000 ? out.substring(0, 9000) : out.toString();
+        return out.length() > 12000 ? out.substring(0, 12000) : out.toString();
     }
 
     private void appendNode(AccessibilityNodeInfo n, StringBuilder out, int depth) {
-        if (n == null || depth > 20 || out.length() > 9000) return;
+        if (n == null || depth > 24 || out.length() > 12000) return;
         CharSequence text = n.getText();
         CharSequence desc = n.getContentDescription();
         if ((text != null && text.length() > 0) || (desc != null && desc.length() > 0) || n.isClickable() || n.isEditable()) {
@@ -55,15 +63,43 @@ public class LunaAccessibilityService extends AccessibilityService {
                .append("[desc=").append(desc == null ? "" : desc).append("]")
                .append("[click=").append(n.isClickable()).append("]")
                .append("[edit=").append(n.isEditable()).append("]")
+               .append("[visible=").append(n.isVisibleToUser()).append("]")
                .append("[bounds=").append(r.left).append(',').append(r.top).append(',').append(r.right).append(',').append(r.bottom).append("]\n");
         }
         for (int i = 0; i < n.getChildCount(); i++) appendNode(n.getChild(i), out, depth + 1);
     }
 
+    public void captureScreen(Executor executor, ScreenCallback callback) {
+        if (Build.VERSION.SDK_INT < 30 || stopped) { callback.onResult(null); return; }
+        try {
+            takeScreenshot(Display.DEFAULT_DISPLAY, executor, new TakeScreenshotCallbackCompat(callback));
+        } catch (Throwable t) { callback.onResult(null); }
+    }
+
+    public interface ScreenCallback { void onResult(String base64Png); }
+
+    private static final class TakeScreenshotCallbackCompat extends AccessibilityService.TakeScreenshotCallback {
+        private final ScreenCallback callback;
+        TakeScreenshotCallbackCompat(ScreenCallback callback) { this.callback = callback; }
+        @Override public void onSuccess(AccessibilityService.ScreenshotResult result) {
+            try {
+                Bitmap b = Bitmap.wrapHardwareBuffer(result.getHardwareBuffer(), result.getColorSpace());
+                if (b == null) { callback.onResult(null); return; }
+                Bitmap copy = b.copy(Bitmap.Config.ARGB_8888, false);
+                b.recycle();
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                copy.compress(Bitmap.CompressFormat.JPEG, 70, out);
+                copy.recycle();
+                callback.onResult(android.util.Base64.encodeToString(out.toByteArray(), android.util.Base64.NO_WRAP));
+            } catch (Throwable t) { callback.onResult(null); }
+        }
+        @Override public void onFailure(int errorCode) { callback.onResult(null); }
+    }
+
     public boolean clickText(String value) { return clickMatch(value, false); }
     public boolean clickDescription(String value) { return clickMatch(value, true); }
     private boolean clickMatch(String value, boolean descOnly) {
-        if (stopped || value == null) return false;
+        if (stopped || value == null || value.trim().isEmpty()) return false;
         AccessibilityNodeInfo root = getRootInActiveWindow();
         if (root == null) return false;
         List<AccessibilityNodeInfo> nodes = new ArrayList<>();
@@ -71,7 +107,7 @@ public class LunaAccessibilityService extends AccessibilityService {
         for (AccessibilityNodeInfo n : nodes) {
             AccessibilityNodeInfo p = n;
             while (p != null) {
-                if (p.isClickable()) return p.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+                if (p.isClickable() && p.isVisibleToUser()) return p.performAction(AccessibilityNodeInfo.ACTION_CLICK);
                 p = p.getParent();
             }
         }
@@ -86,14 +122,30 @@ public class LunaAccessibilityService extends AccessibilityService {
         for (int i = 0; i < n.getChildCount(); i++) collectMatches(n.getChild(i), needle, descOnly, out);
     }
 
+    public boolean clickPoint(float x, float y) {
+        if (stopped || Build.VERSION.SDK_INT < 24) return false;
+        Path path = new Path(); path.moveTo(x, y);
+        GestureDescription gesture = new GestureDescription.Builder()
+                .addStroke(new GestureDescription.StrokeDescription(path, 0, 80)).build();
+        return dispatchGesture(gesture, null, null);
+    }
+
     public boolean typeText(String text) {
         if (stopped) return false;
         AccessibilityNodeInfo root = getRootInActiveWindow();
         if (root == null) return false;
-        AccessibilityNodeInfo target = findEditable(root);
+        AccessibilityNodeInfo target = findFocusedEditable(root);
+        if (target == null) target = findEditable(root);
         if (target == null) return false;
-        Bundle b = new Bundle(); b.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text);
+        Bundle b = new Bundle(); b.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, text == null ? "" : text);
         return target.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, b);
+    }
+
+    private AccessibilityNodeInfo findFocusedEditable(AccessibilityNodeInfo n) {
+        if (n == null) return null;
+        if (n.isEditable() && n.isFocused() && n.isVisibleToUser()) return n;
+        for (int i = 0; i < n.getChildCount(); i++) { AccessibilityNodeInfo x = findFocusedEditable(n.getChild(i)); if (x != null) return x; }
+        return null;
     }
 
     private AccessibilityNodeInfo findEditable(AccessibilityNodeInfo n) {
@@ -110,7 +162,7 @@ public class LunaAccessibilityService extends AccessibilityService {
     }
     private boolean scrollNode(AccessibilityNodeInfo n, String dir) {
         if (n == null) return false;
-        if (n.isScrollable()) {
+        if (n.isScrollable() && n.isVisibleToUser()) {
             int action = "UP".equals(dir) ? AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD : AccessibilityNodeInfo.ACTION_SCROLL_FORWARD;
             if (n.performAction(action)) return true;
         }
