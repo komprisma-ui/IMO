@@ -2,10 +2,9 @@ name: LUNA Android Control Build
 on:
   push:
     branches: [ main ]
-  pull_request:
   workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -33,8 +32,12 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
           unzip -t "$APK" >/dev/null
           sha256sum "$APK"
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: LUNA-ANDROID-CONTROL-2.0.0
-          path: app/build/outputs/apk/release/*.apk
+      - name: Publish APK as GitHub Release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="luna-2.0.0-${{ github.run_number }}"
+          gh release create "$TAG" app/build/outputs/apk/release/app-release.apk \
+            --repo "${{ github.repository }}" \
+            --title "LUNA Android Control 2.0.0" \
+            --notes "Personal development APK. Enable LUNA Accessibility Service after installation. Configure the existing OpenAI API key locally inside the app."
