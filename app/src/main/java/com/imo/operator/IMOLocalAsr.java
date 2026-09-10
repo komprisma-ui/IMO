@@ -7,27 +7,26 @@ import com.k2fsa.sherpa.onnx.OfflineRecognizerConfig;
 import com.k2fsa.sherpa.onnx.OfflineStream;
 import com.k2fsa.sherpa.onnx.OfflineWhisperModelConfig;
 
-/** Offline multilingual Whisper ASR. Raw PCM is transient and is not persisted. */
+/** Persistent offline multilingual Whisper ASR. Uses the higher-accuracy base model while keeping the recognizer warm. */
 public final class IMOLocalAsr {
-    private static final String MODEL_DIR = "asr/whisper-tiny";
+    private static final String MODEL_DIR = "asr/whisper-base";
     private final OfflineRecognizer recognizer;
 
     public IMOLocalAsr(Context context) {
         if (context == null) throw new IllegalArgumentException("Context is required");
         OfflineWhisperModelConfig whisper = new OfflineWhisperModelConfig();
-        whisper.setEncoder(MODEL_DIR + "/tiny-encoder.int8.onnx");
-        whisper.setDecoder(MODEL_DIR + "/tiny-decoder.int8.onnx");
+        whisper.setEncoder(MODEL_DIR + "/base-encoder.int8.onnx");
+        whisper.setDecoder(MODEL_DIR + "/base-decoder.int8.onnx");
         whisper.setLanguage("id");
         whisper.setTask("transcribe");
-        whisper.setTailPaddings(1000);
-
+        whisper.setTailPaddings(600);
         OfflineModelConfig model = new OfflineModelConfig();
         model.setWhisper(whisper);
-        model.setTokens(MODEL_DIR + "/tiny-tokens.txt");
-        model.setNumThreads(2);
+        model.setTokens(MODEL_DIR + "/base-tokens.txt");
+        int cores = Runtime.getRuntime().availableProcessors();
+        model.setNumThreads(Math.max(2, Math.min(4, cores)));
         model.setProvider("cpu");
         model.setModelType("whisper");
-
         OfflineRecognizerConfig config = new OfflineRecognizerConfig();
         config.setModelConfig(model);
         config.setDecodingMethod("greedy_search");

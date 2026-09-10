@@ -2,12 +2,12 @@ name: IMO Android Build
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, feature/natural-luna-final8 ]
   pull_request:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -15,24 +15,19 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
-
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
-
       - name: Install Android SDK packages
         run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
-
       - name: Fetch pinned speaker runtime and model
         shell: bash
         run: |
@@ -42,26 +37,23 @@ jobs:
           echo "c4ef49e309f24fcee5c106b8a279481aaecaabb078cd37b2cd6e9a62cc8a73c8  app/libs/sherpa-onnx-1.13.7.aar" | sha256sum -c -
           curl -fL --retry 4 --retry-all-errors -o app/src/main/assets/3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx
           echo "f682b514c05d947ee3fa91cd6ec6c5c7543479a128373fa29b1faedccd21fd11  app/src/main/assets/3dspeaker_speech_campplus_sv_zh-cn_16k-common.onnx" | sha256sum -c -
-
-      - name: Fetch pinned multilingual Whisper ASR model
+      - name: Fetch higher-accuracy multilingual Whisper ASR model
         shell: bash
         run: |
           set -euo pipefail
-          tmp="/tmp/whisper-tiny.tar.bz2"
-          curl -fL --retry 4 --retry-all-errors -o "$tmp" https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-tiny.tar.bz2
-          mkdir -p /tmp/whisper-tiny
-          tar -xjf "$tmp" -C /tmp/whisper-tiny
-          model_dir="$(find /tmp/whisper-tiny -maxdepth 1 -type d -name 'sherpa-onnx-whisper-tiny*' | head -n 1)"
+          tmp="/tmp/whisper-base.tar.bz2"
+          curl -fL --retry 4 --retry-all-errors -o "$tmp" https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/sherpa-onnx-whisper-base.tar.bz2
+          mkdir -p /tmp/whisper-base
+          tar -xjf "$tmp" -C /tmp/whisper-base
+          model_dir="$(find /tmp/whisper-base -maxdepth 1 -type d -name 'sherpa-onnx-whisper-base*' | head -n 1)"
           test -n "$model_dir"
-          mkdir -p app/src/main/assets/asr/whisper-tiny
-          cp "$model_dir/tiny-encoder.int8.onnx" app/src/main/assets/asr/whisper-tiny/
-          cp "$model_dir/tiny-decoder.int8.onnx" app/src/main/assets/asr/whisper-tiny/
-          cp "$model_dir/tiny-tokens.txt" app/src/main/assets/asr/whisper-tiny/
-          sha256sum app/src/main/assets/asr/whisper-tiny/*
-
+          mkdir -p app/src/main/assets/asr/whisper-base
+          cp "$model_dir/base-encoder.int8.onnx" app/src/main/assets/asr/whisper-base/
+          cp "$model_dir/base-decoder.int8.onnx" app/src/main/assets/asr/whisper-base/
+          cp "$model_dir/base-tokens.txt" app/src/main/assets/asr/whisper-base/
+          sha256sum app/src/main/assets/asr/whisper-base/*
       - name: Build install-ready release APK
         run: gradle assembleRelease --stacktrace
-
       - name: Verify APK signature and package
         shell: bash
         run: |
@@ -72,9 +64,22 @@ jobs:
           unzip -t "$APK" >/dev/null
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | head -n 8
           sha256sum "$APK"
-
-      - name: Upload installer APK
+      - name: Upload installer APK artifact (best effort)
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: IMO-1.5.0-SUPER-AI-INSTALLER
+          name: IMO-1.6.0-NATURAL-JARVIS-FINAL
           path: app/build/outputs/apk/release/*.apk
+      - name: Publish final APK as GitHub Release asset
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          APK="$(find app/build/outputs/apk/release -name '*.apk' -type f | head -n 1)"
+          TAG="imo-1.6.0-final-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" "$APK" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "IMO 1.6.0 Natural JARVIS Final #${GITHUB_RUN_NUMBER}" \
+            --notes "Final verified Android APK for IMO 1.6.0. Build ${GITHUB_RUN_ID}. APK was compiled and signature/package verified before publication." \
+            --target "$GITHUB_SHA"

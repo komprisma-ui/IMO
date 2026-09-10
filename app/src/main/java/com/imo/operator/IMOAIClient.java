@@ -22,11 +22,23 @@ public final class IMOAIClient {
     public String endpoint(){String e=store.get(ENDPOINT_KEY);return e.isEmpty()?"https://api.openai.com/v1/responses":e;}
     public void configure(String endpoint,String model,String apiKey)throws Exception{store.put(ENDPOINT_KEY,endpoint==null?"":endpoint.trim());store.put(MODEL_KEY,model==null?"":model.trim());store.put(API_KEY,apiKey==null?"":apiKey.trim());}
     public void clear(){store.clear(API_KEY);store.clear(ENDPOINT_KEY);store.clear(MODEL_KEY);}
+
+    /** Default quality path for conversation and difficult reasoning. */
     public String reason(String system,String conversation,String screenObservation)throws Exception{
+        return reasonWithEffort(system,conversation,screenObservation,"high");
+    }
+
+    /** Low-latency path for routine autonomous planning where speed matters. */
+    public String reasonFast(String system,String conversation,String screenObservation)throws Exception{
+        return reasonWithEffort(system,conversation,screenObservation,"low");
+    }
+
+    private String reasonWithEffort(String system,String conversation,String screenObservation,String effort)throws Exception{
         String key=store.get(API_KEY);if(key.isEmpty())throw new IllegalStateException("AI belum dikonfigurasi");
         String prompt=(system==null?"":system)+"\n\nKONTEKS LAYAR:\n"+(screenObservation==null?"":screenObservation)+"\n\nDIALOG:\n"+(conversation==null?"":conversation);
-        return request("{\"model\":"+json(model())+",\"input\":"+json(prompt)+",\"reasoning\":{\"effort\":\"high\"}}");
+        return request("{\"model\":"+json(model())+",\"input\":"+json(prompt)+",\"reasoning\":{\"effort\":"+json(effort)+"}}");
     }
+
     /** Sends one recent front-camera frame as visual context; the frame is never persisted by IMO. */
     public String reasonWithVision(String system,String conversation,String screenObservation,byte[] jpeg)throws Exception{
         if(!configured())throw new IllegalStateException("AI belum dikonfigurasi");
@@ -35,20 +47,20 @@ public final class IMOAIClient {
         String image="data:image/jpeg;base64,"+Base64.encodeToString(jpeg,Base64.NO_WRAP);
         String content="[{\"type\":\"input_text\",\"text\":"+json(prompt)+"},{\"type\":\"input_image\",\"image_url\":"+json(image)+"}]";
         String input="[{\"role\":\"user\",\"content\":"+content+"}]";
-        return request("{\"model\":"+json(model())+",\"input\":"+input+",\"reasoning\":{\"effort\":\"high\"}}");
+        return request("{\"model\":"+json(model())+",\"input\":"+input+",\"reasoning\":{\"effort\":\"low\"}}");
     }
     private String request(String body)throws Exception{
         String key=store.get(API_KEY);Exception last=null;
         for(int attempt=0;attempt<2;attempt++){
             HttpURLConnection c=null;
             try{
-                c=(HttpURLConnection)new URL(endpoint()).openConnection();c.setRequestMethod("POST");c.setConnectTimeout(9000);c.setReadTimeout(30000);c.setDoOutput(true);
+                c=(HttpURLConnection)new URL(endpoint()).openConnection();c.setRequestMethod("POST");c.setConnectTimeout(6000);c.setReadTimeout(20000);c.setDoOutput(true);
                 c.setRequestProperty("Authorization","Bearer "+key);c.setRequestProperty("Content-Type","application/json");c.setRequestProperty("Accept","application/json");
                 byte[] bytes=body.getBytes(StandardCharsets.UTF_8);c.setFixedLengthStreamingMode(bytes.length);try(OutputStream out=c.getOutputStream()){out.write(bytes);}
                 int code=c.getResponseCode();InputStream stream=code>=200&&code<300?c.getInputStream():c.getErrorStream();String response=read(stream);
                 if(code>=200&&code<300){String text=extractOutputText(response);if(text.isEmpty())throw new IllegalStateException("AI mengembalikan jawaban kosong");return text;}
-                String msg="AI HTTP "+code+": "+compactError(response);if(code==408||code==409||code==429||code>=500){last=new IllegalStateException(msg);if(attempt==0){Thread.sleep(350);continue;}}throw new IllegalStateException(msg);
-            }catch(Exception e){last=e;if(attempt==0&&isTransient(e)){try{Thread.sleep(350);}catch(InterruptedException x){Thread.currentThread().interrupt();throw x;}continue;}throw e;}finally{if(c!=null)c.disconnect();}
+                String msg="AI HTTP "+code+": "+compactError(response);if(code==408||code==409||code==429||code>=500){last=new IllegalStateException(msg);if(attempt==0){Thread.sleep(200);continue;}}throw new IllegalStateException(msg);
+            }catch(Exception e){last=e;if(attempt==0&&isTransient(e)){try{Thread.sleep(200);}catch(InterruptedException x){Thread.currentThread().interrupt();throw x;}continue;}throw e;}finally{if(c!=null)c.disconnect();}
         }
         throw last==null?new IllegalStateException("AI gagal dipanggil"):last;
     }
