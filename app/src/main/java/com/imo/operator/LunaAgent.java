@@ -1,14 +1,14 @@
 package com.imo.operator;
 
-import android.os.Handler;
-import android.os.Looper;
 import org.json.JSONArray;
 import org.json.JSONObject;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
-/** Observe -> plan -> act -> observe loop for LUNA. */
+/** Observe -> plan -> act -> verify -> recover loop for LUNA. */
 public final class LunaAgent {
     public interface Callback {
         void status(String text);
@@ -19,8 +19,7 @@ public final class LunaAgent {
     private final LunaAccessibilityService service;
     private final SecureKeyStore keyStore;
     private final Callback callback;
-    private final Handler main = new Handler(Looper.getMainLooper());
-    private static final int MAX_STEPS = 8;
+    private static final int MAX_STEPS = 10;
 
     public LunaAgent(MainActivity activity, LunaAccessibilityService service, SecureKeyStore keyStore, Callback callback) {
         this.activity = activity;
@@ -33,53 +32,116 @@ public final class LunaAgent {
         try {
             String api = keyStore.load();
             OpenAIClient ai = new OpenAIClient(api, "gpt-5.6-luna");
-            String goal = command;
+            Set<String> recentActions = new HashSet<>();
+            String lastAction = "";
+
             for (int step = 1; step <= MAX_STEPS; step++) {
-                if (service == null || service.isStopped()) { callback.status("STOP — LUNA menghentikan agent."); return; }
-                callback.status("Mengamati layar — siklus " + step + "/" + MAX_STEPS + "…");
+                if (shouldStop()) return;
+                callback.status("👁 Mengamati layar — langkah " + step + "/" + MAX_STEPS + "…");
                 String image = capture();
                 String snapshot = service.snapshot();
-                String prompt = goal + "\n\nMODE AGENT: ini adalah langkah " + step + " dari maksimal " + MAX_STEPS + ". " +
-                        "Amati keadaan TERKINI. Tentukan HANYA langkah berikutnya yang paling tepat untuk mencapai tujuan. " +
-                        "Jika tujuan sudah tercapai, kembalikan actions kosong. Jangan mengulang tindakan yang sudah berhasil. " +
-                        "Jika elemen teks tidak tersedia tetapi terlihat pada screenshot, gunakan CLICK_POINT dengan koordinat layar. " +
-                        "Untuk tindakan sensitif wajib confirm=true. Hanya satu action dalam array actions.";
+
+                String prompt = command + "\n\nMODE AGENT: langkah " + step + " dari maksimal " + MAX_STEPS + ". " +
+                        "Ini adalah siklus OBSERVE → PLAN → ACT → VERIFY. Amati keadaan TERKINI dari accessibility dan screenshot. " +
+                        "Tentukan HANYA SATU tindakan berikutnya. Setelah tindakan dilakukan, siklus berikutnya akan memverifikasi hasilnya. " +
+                        "Jika tujuan SUDAH tercapai, actions harus kosong. Jangan mengulang tindakan yang sudah berhasil. " +
+                        "Tindakan terakhir: " + lastAction + ". Hindari tindakan yang identik tanpa alasan kuat. " +
+                        "Jika elemen tidak ada di accessibility tree tetapi terlihat jelas pada screenshot, gunakan CLICK_POINT. " +
+                        "Jangan mengarang koordinat. Tindakan sensitif (kirim, hapus, beli, transfer, ubah keamanan, atau dampak permanen) wajib confirm=true. " +
+                        "Untuk actions kosong, gunakan speak untuk menjelaskan hasil dalam Bahasa Indonesia.";
+
                 JSONObject plan = new JSONObject(ai.plan(prompt, snapshot, image));
                 JSONArray actions = plan.optJSONArray("actions");
                 if (actions == null || actions.length() == 0) {
-                    callback.status(plan.optString("speak", "Tujuan selesai atau tidak ada tindakan yang diperlukan."));
+                    callback.status("✓ " + plan.optString("speak", "Tujuan selesai atau tidak ada tindakan yang diperlukan."));
                     return;
                 }
-                if (plan.optBoolean("confirm", false)) {
-                    boolean approved = callback.confirm(plan);
-                    if (!approved) { callback.status("Tindakan dibatalkan pengguna."); return; }
-                }
+
                 JSONObject action = actions.getJSONObject(0);
+                String signature = signature(action);
+                if (recentActions.contains(signature) && !"WAIT".equals(action.optString("type"))) {
+                    callback.status("LUNA mendeteksi pengulangan tindakan. Mengamati ulang…");
+                    recentActions.clear();
+                    recentActions.add(signature);
+                    lastAction = signature;
+                    continue;
+                }
+
+                if (plan.optBoolean("confirm", false)) {
+                    callback.status("⚠ Meminta konfirmasi untuk tindakan sensitif…");
+                    if (!callback.confirm(plan)) {
+                        callback.status("Tindakan dibatalkan pengguna.");
+                        return;
+                    }
+                }
+
+                recentActions.add(signature);
+                lastAction = signature;
+                callback.status("⚙ Menjalankan: " + action.optString("type") + "…");
                 boolean ok = execute(action);
                 callback.status("Agent langkah " + step + ": " + action.optString("type") + " → " + (ok ? "berhasil" : "gagal"));
+
                 if (!ok) {
-                    // Give the model one fresh observation after a failed action instead of blindly continuing.
-                    callback.status("Langkah gagal. LUNA mengamati ulang untuk pemulihan…");
+                    if (shouldStop()) return;
+                    callback.status("↻ Langkah gagal. LUNA mengamati ulang untuk pemulihan…");
                     String recoveryImage = capture();
                     String recoverySnapshot = service.snapshot();
-                    JSONObject recovery = new JSONObject(ai.plan(goal +
-                            "\n\nPEMULIHAN: langkah sebelumnya gagal (" + action.optString("type") + "). " +
-                            "Cari cara alternatif berdasarkan layar TERKINI. Hanya satu action. Jangan mengulang action yang sama jika tidak diperlukan.",
+                    JSONObject recovery = new JSONObject(ai.plan(command +
+                            "\n\nPEMULIHAN: tindakan sebelumnya gagal (" + action.optString("type") + "). " +
+                            "Amati layar TERKINI dan pilih SATU cara alternatif. Jangan mengulang tindakan gagal yang sama. " +
+                            "Tujuan akhir tetap harus tercapai dan hasilnya harus dapat diverifikasi pada siklus berikutnya.",
                             recoverySnapshot, recoveryImage));
                     JSONArray ra = recovery.optJSONArray("actions");
-                    if (ra == null || ra.length() == 0) { callback.status("LUNA tidak menemukan langkah pemulihan yang aman."); return; }
+                    if (ra == null || ra.length() == 0) {
+                        callback.status("LUNA tidak menemukan langkah pemulihan yang aman.");
+                        return;
+                    }
                     if (recovery.optBoolean("confirm", false) && !callback.confirm(recovery)) return;
                     JSONObject retry = ra.getJSONObject(0);
+                    String retrySignature = signature(retry);
+                    if (recentActions.contains(retrySignature) && !"WAIT".equals(retry.optString("type"))) {
+                        callback.status("LUNA menghentikan pengulangan setelah kegagalan.");
+                        return;
+                    }
+                    recentActions.add(retrySignature);
                     boolean recovered = execute(retry);
-                    callback.status("Pemulihan: " + retry.optString("type") + " → " + (recovered ? "berhasil" : "gagal"));
-                    if (!recovered) { callback.status("LUNA berhenti: pemulihan gagal."); return; }
+                    callback.status("↻ Pemulihan: " + retry.optString("type") + " → " + (recovered ? "berhasil" : "gagal"));
+                    if (!recovered) {
+                        callback.status("LUNA berhenti: pemulihan gagal.");
+                        return;
+                    }
                 }
-                Thread.sleep(350);
+
+                if (!pauseResponsive(450)) return;
             }
-            callback.status("LUNA berhenti setelah batas agent " + MAX_STEPS + " langkah.");
+            callback.status("LUNA berhenti setelah batas aman " + MAX_STEPS + " langkah. Silakan lanjutkan dengan perintah baru.");
         } catch (Exception e) {
-            callback.status("Agent error: " + e.getMessage());
+            callback.status("LUNA mengalami error: " + e.getMessage());
         }
+    }
+
+    private boolean shouldStop() {
+        if (service == null || service.isStopped()) {
+            callback.status("■ STOP — LUNA menghentikan agent.");
+            return true;
+        }
+        return false;
+    }
+
+    private boolean pauseResponsive(long ms) {
+        long end = System.currentTimeMillis() + ms;
+        while (System.currentTimeMillis() < end) {
+            if (shouldStop()) return false;
+            try { Thread.sleep(Math.min(100, end - System.currentTimeMillis())); }
+            catch (InterruptedException e) { Thread.currentThread().interrupt(); return false; }
+        }
+        return true;
+    }
+
+    private String signature(JSONObject x) {
+        return x.optString("type") + "|" + x.optString("value") + "|" + x.optString("package") +
+                "|" + x.optString("label") + "|" + x.optString("direction") + "|" +
+                x.optString("x") + "|" + x.optString("y");
     }
 
     private boolean execute(JSONObject x) {
@@ -95,7 +157,10 @@ public final class LunaAgent {
         if ("HOME".equals(type)) return service.globalHome();
         if ("RECENTS".equals(type)) return service.globalRecents();
         if ("OPEN_URL".equals(type)) return device.openUrl(x.optString("value"));
-        if ("WAIT".equals(type)) { device.delay(Math.min(5000, Math.max(50, x.optLong("delayMs", 500)))); return true; }
+        if ("WAIT".equals(type)) {
+            device.delay(Math.min(5000, Math.max(50, x.optLong("delayMs", 500))));
+            return !shouldStop();
+        }
         return false;
     }
 
