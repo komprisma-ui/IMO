@@ -67,5 +67,5 @@ jobs:
       - name: Upload installer APK
         uses: actions/upload-artifact@v4
         with:
-          name: IMO-1.5.0-SUPER-AI-INSTALLER
+          name: IMO-1.6.0-NATURAL-JARVIS-FINAL
           path: app/build/outputs/apk/release/*.apk
