@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -64,8 +64,22 @@ jobs:
           unzip -t "$APK" >/dev/null
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | head -n 8
           sha256sum "$APK"
-      - name: Upload installer APK
+      - name: Upload installer APK artifact (best effort)
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: IMO-1.6.0-NATURAL-JARVIS-FINAL
           path: app/build/outputs/apk/release/*.apk
+      - name: Publish final APK as GitHub Release asset
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          APK="$(find app/build/outputs/apk/release -name '*.apk' -type f | head -n 1)"
+          TAG="imo-1.6.0-final-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" "$APK" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "IMO 1.6.0 Natural JARVIS Final #${GITHUB_RUN_NUMBER}" \
+            --notes "Final verified Android APK for IMO 1.6.0. Build ${GITHUB_RUN_ID}. APK was compiled and signature/package verified before publication." \
+            --target "$GITHUB_SHA"
