@@ -1,41 +1,11 @@
-# IMO — Intelligent Mobile Operator
+# LUNA Android Control
 
-AI personal operator untuk Android — voice, perception, reasoning, execution, dan verification.
+LUNA is an Android AI assistant designed to operate the device, not merely chat.
 
-## Visi
-IMO dirancang sebagai operator AI yang dapat memahami perintah bahasa alami, membaca konteks layar, menjalankan aksi pada perangkat Android, memverifikasi hasil, dan pulih ketika terjadi kegagalan.
+Core loop: Observe -> Think -> Act -> Observe -> Verify.
 
-## Arsitektur inti
+This build combines Android Accessibility Service, voice input/TTS, and an OpenAI Responses API planner. The model receives a compact accessibility snapshot and returns a strict action plan.
 
-`Voice → Brain → Perception → Executor → Verify → Brain`
+Milestone 1: natural Indonesian voice/text commands; open app, click text/content-description, type, scroll, Back, Home; multi-step plans; confirmation gate for sensitive actions; emergency STOP; accessibility status; local encrypted API-key storage for personal testing.
 
-Loop utama: **observe → think → act → observe → verify**.
-
-## Status
-
-🚧 Active development — fondasi Android Accessibility + voice operator sedang dibangun.
-
-## Target kemampuan
-
-- Percakapan suara Bahasa Indonesia
-- Text-to-Speech
-- Membaca UI Android melalui Accessibility
-- Membuka aplikasi
-- Klik elemen berdasarkan teks/content description
-- Mengetik ke field input
-- Back / Home
-- Perencanaan multi-langkah
-- Verifikasi hasil aksi
-- Recovery ketika aksi gagal
-- Confirmation gate untuk aksi sensitif
-- Integrasi AI Brain/LLM secara aman
-
-## Struktur awal
-
-- `app/` — aplikasi Android IMO
-- `.github/workflows/` — automated Android build
-- `README.md` — dokumentasi proyek
-
-## Prinsip keamanan
-
-API key dan credential tidak boleh ditanam langsung ke source code atau di-commit ke repository. Gunakan secret management dan konfigurasi runtime yang aman.
+Never commit an API key. For production/distribution, route OpenAI traffic through a backend. The personal-development build lets the owner enter an existing key locally and stores it with Android Keystore-backed encryption.
