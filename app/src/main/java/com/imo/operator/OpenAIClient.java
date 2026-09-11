@@ -11,91 +11,27 @@ import java.io.IOException;
 import java.util.concurrent.TimeUnit;
 
 public final class OpenAIClient {
-    private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
-    private final OkHttpClient http = new OkHttpClient.Builder().connectTimeout(20, TimeUnit.SECONDS).readTimeout(120, TimeUnit.SECONDS).build();
-    private final String apiKey, model;
-    public OpenAIClient(String apiKey, String model) { this.apiKey=apiKey; this.model=model; }
+    private static final MediaType JSON=MediaType.get("application/json; charset=utf-8");
+    private final OkHttpClient http=new OkHttpClient.Builder().connectTimeout(20,TimeUnit.SECONDS).readTimeout(120,TimeUnit.SECONDS).build();
+    private final String apiKey,model;
+    public OpenAIClient(String apiKey,String model){this.apiKey=apiKey;this.model=model;}
 
-    public String plan(String command, String screen, String imageBase64Jpeg) throws Exception {
-        if(apiKey==null||apiKey.trim().isEmpty()) throw new IllegalStateException("API key belum diatur.");
-        JSONObject body=new JSONObject();
-        body.put("model",model); body.put("store",false);
-        body.put("reasoning",new JSONObject().put("effort","high"));
-        body.put("instructions",
-                "Kamu adalah LUNA, AI operator Android yang bertugas menyelesaikan tujuan pengguna dengan aman. "+
-                "Kamu bukan chatbot biasa: kamu melihat accessibility tree dan screenshot, memahami konteks layar, memilih tindakan, "+
-                "menjalankan tindakan melalui Android Accessibility, lalu memeriksa layar lagi. Berpikir beberapa langkah ke depan, "+
-                "tetapi keluarkan tepat SATU action per respons agar aplikasi dapat memverifikasi hasilnya. "+
-                "Gunakan resource ID jika paling pasti, kemudian text/content description, kemudian koordinat visual dari screenshot. "+
-                "Jangan menebak koordinat atau nama target. Jika target belum terlihat, gunakan scroll/swipe atau strategi lain. "+
-                "Jika aplikasi belum siap, gunakan WAIT. Untuk membuka aplikasi gunakan package atau label. "+
-                "Kamu dapat melakukan OPEN_APP, klik, tekan lama, TYPE, SCROLL, SWIPE, BACK, HOME, RECENTS, membuka notification shade, "+
-                "quick settings, URL, Android Settings, mengatur volume, dan mute. "+
-                "Tindakan sensitif seperti mengirim pesan, menghapus data, membeli, transfer uang, mengubah keamanan, atau tindakan permanen "+
-                "wajib confirm=true dan tidak boleh dilakukan sebelum pengguna menyetujui. "+
-                "Jika pengguna hanya mengajak bicara, actions kosong dan jawab natural dalam bahasa Indonesia. "+
-                "Jika tujuan selesai, actions kosong dan speak menjelaskan hasil. Jangan mengarang bahwa tindakan berhasil jika belum diverifikasi.");
-
-        JSONArray input=new JSONArray();
-        JSONObject msg=new JSONObject().put("role","user");
-        JSONArray content=new JSONArray();
-        content.put(new JSONObject().put("type","input_text").put("text",
-                "PERINTAH PENGGUNA:\n"+command+
-                "\n\nACCESSIBILITY TREE TERKINI:\n"+screen));
-        if(imageBase64Jpeg!=null&&!imageBase64Jpeg.isEmpty())
-            content.put(new JSONObject().put("type","input_image").put("image_url","data:image/jpeg;base64,"+imageBase64Jpeg));
-        msg.put("content",content); input.put(msg); body.put("input",input);
-
-        JSONObject text=new JSONObject(), format=new JSONObject();
-        format.put("type","json_schema").put("name","device_plan").put("strict",true);
-        JSONObject schema=new JSONObject().put("type","object"), props=new JSONObject();
-        props.put("speak",new JSONObject().put("type","string"));
-        props.put("confirm",new JSONObject().put("type","boolean"));
-        JSONObject action=new JSONObject().put("type","object"), ap=new JSONObject();
-        ap.put("type",new JSONObject().put("type","string").put("enum",new JSONArray(new String[]{
-                "OPEN_APP","CLICK_TEXT","CLICK_DESC","CLICK_ID","CLICK_POINT",
-                "LONG_CLICK_TEXT","LONG_CLICK_DESC","LONG_CLICK_ID","LONG_CLICK_POINT","TYPE",
-                "SCROLL","SWIPE","BACK","HOME","RECENTS","NOTIFICATIONS","QUICK_SETTINGS",
-                "WAIT","OPEN_URL","OPEN_SETTINGS","SET_VOLUME","MUTE"})));
-        ap.put("value",new JSONObject().put("type","string"));
-        ap.put("package",new JSONObject().put("type","string"));
-        ap.put("label",new JSONObject().put("type","string"));
-        ap.put("direction",new JSONObject().put("type","string"));
-        ap.put("delayMs",new JSONObject().put("type","integer"));
-        ap.put("distance",new JSONObject().put("type","integer"));
-        ap.put("durationMs",new JSONObject().put("type","integer"));
-        ap.put("x",new JSONObject().put("type","number"));
-        ap.put("y",new JSONObject().put("type","number"));
-        ap.put("level",new JSONObject().put("type","integer"));
-        action.put("properties",ap).put("required",new JSONArray(new String[]{
-                "type","value","package","label","direction","delayMs","distance","durationMs","x","y","level"}))
-                .put("additionalProperties",false);
-        props.put("actions",new JSONObject().put("type","array").put("items",action));
-        schema.put("properties",props).put("required",new JSONArray(new String[]{"speak","confirm","actions"})).put("additionalProperties",false);
-        format.put("schema",schema); text.put("format",format); body.put("text",text);
-
-        Request request=new Request.Builder().url("https://api.openai.com/v1/responses")
-                .header("Authorization","Bearer "+apiKey).header("Content-Type","application/json")
-                .post(RequestBody.create(body.toString(),JSON)).build();
+    public String plan(String command,String screen,String imageBase64Jpeg)throws Exception{
+        if(apiKey==null||apiKey.trim().isEmpty())throw new IllegalStateException("API key belum diatur. Tekan API KEY lalu simpan key.");
+        JSONObject body=new JSONObject();body.put("model",model);body.put("store",false);body.put("reasoning",new JSONObject().put("effort","high"));
+        body.put("instructions","Kamu adalah LUNA, AI operator Android yang menyelesaikan tujuan pengguna dengan aman. Kamu melihat accessibility tree dan screenshot, memilih SATU tindakan, lalu aplikasi akan memverifikasi layar dan memanggilmu lagi. Gunakan resource ID jika paling pasti, lalu text/content description, lalu koordinat hanya jika terlihat jelas. Jangan menebak. Jika target belum terlihat, scroll/swipe/back sesuai konteks. Jika tujuan selesai atau pengguna hanya mengobrol, actions kosong dan jawab natural dalam bahasa Indonesia. Jangan mengaku berhasil sebelum diverifikasi. Tindakan sensitif seperti mengirim pesan, menghapus data, membeli, transfer uang, mengubah keamanan, atau tindakan permanen wajib confirm=true. Dukungan tindakan: OPEN_APP, CLICK_TEXT, CLICK_DESC, CLICK_ID, CLICK_POINT, LONG_CLICK_TEXT, LONG_CLICK_DESC, LONG_CLICK_ID, LONG_CLICK_POINT, TYPE, SCROLL, SWIPE, BACK, HOME, RECENTS, NOTIFICATIONS, QUICK_SETTINGS, WAIT, OPEN_URL, OPEN_SETTINGS, SET_VOLUME, MUTE.");
+        JSONArray input=new JSONArray();JSONObject msg=new JSONObject().put("role","user");JSONArray content=new JSONArray();content.put(new JSONObject().put("type","input_text").put("text","PERINTAH PENGGUNA:\n"+command+"\n\nACCESSIBILITY TREE TERKINI:\n"+screen));if(imageBase64Jpeg!=null&&!imageBase64Jpeg.isEmpty())content.put(new JSONObject().put("type","input_image").put("image_url","data:image/jpeg;base64,"+imageBase64Jpeg));msg.put("content",content);input.put(msg);body.put("input",input);
+        JSONObject text=new JSONObject(),format=new JSONObject();format.put("type","json_schema").put("name","device_plan").put("strict",true);JSONObject schema=new JSONObject().put("type","object"),props=new JSONObject();props.put("speak",new JSONObject().put("type","string"));props.put("confirm",new JSONObject().put("type","boolean"));JSONObject action=new JSONObject().put("type","object"),ap=new JSONObject();ap.put("type",new JSONObject().put("type","string").put("enum",new JSONArray(new String[]{"OPEN_APP","CLICK_TEXT","CLICK_DESC","CLICK_ID","CLICK_POINT","LONG_CLICK_TEXT","LONG_CLICK_DESC","LONG_CLICK_ID","LONG_CLICK_POINT","TYPE","SCROLL","SWIPE","BACK","HOME","RECENTS","NOTIFICATIONS","QUICK_SETTINGS","WAIT","OPEN_URL","OPEN_SETTINGS","SET_VOLUME","MUTE"})));ap.put("value",new JSONObject().put("type","string"));ap.put("package",new JSONObject().put("type","string"));ap.put("label",new JSONObject().put("type","string"));ap.put("direction",new JSONObject().put("type","string"));ap.put("delayMs",new JSONObject().put("type","integer"));ap.put("distance",new JSONObject().put("type","integer"));ap.put("durationMs",new JSONObject().put("type","integer"));ap.put("x",new JSONObject().put("type","number"));ap.put("y",new JSONObject().put("type","number"));ap.put("level",new JSONObject().put("type","integer"));action.put("properties",ap).put("required",new JSONArray(new String[]{"type","value","package","label","direction","delayMs","distance","durationMs","x","y","level"})).put("additionalProperties",false);props.put("actions",new JSONObject().put("type","array").put("items",action));schema.put("properties",props).put("required",new JSONArray(new String[]{"speak","confirm","actions"})).put("additionalProperties",false);format.put("schema",schema);text.put("format",format);body.put("text",text);
+        Request request=new Request.Builder().url("https://api.openai.com/v1/responses").header("Authorization","Bearer "+apiKey).header("Content-Type","application/json").post(RequestBody.create(body.toString(),JSON)).build();
         try(Response r=http.newCall(request).execute()){
-            if(!r.isSuccessful()) throw new IOException("OpenAI HTTP "+r.code()+": "+(r.body()==null?"":r.body().string()));
             String raw=r.body()==null?"":r.body().string();
-            String result=findOutputText(new JSONObject(raw));
-            if(result==null||result.trim().isEmpty()) throw new IOException("OpenAI tidak mengembalikan rencana tindakan.");
-            return result;
+            if(!r.isSuccessful()) throw new IOException(readableApiError(r.code(),raw));
+            String result=findOutputText(new JSONObject(raw));if(result==null||result.trim().isEmpty())throw new IOException("OpenAI tidak mengembalikan rencana tindakan.");return result;
         }
     }
 
-    private String findOutputText(Object o){
-        if(o instanceof JSONObject){
-            JSONObject j=(JSONObject)o;
-            if("output_text".equals(j.optString("type"))&&j.has("text")) return j.optString("text");
-            JSONArray ns=j.names();
-            if(ns!=null) for(int i=0;i<ns.length();i++){String s=findOutputText(j.opt(ns.optString(i)));if(s!=null)return s;}
-        } else if(o instanceof JSONArray){
-            JSONArray a=(JSONArray)o;
-            for(int i=0;i<a.length();i++){String s=findOutputText(a.opt(i));if(s!=null)return s;}
-        }
-        return null;
+    private String readableApiError(int code,String raw){
+        try{JSONObject root=new JSONObject(raw);JSONObject e=root.optJSONObject("error");String type=e==null?"":e.optString("type");String msg=e==null?"":e.optString("message");if(code==429&&(raw.contains("insufficient_quota")||raw.contains("credit_balance_exhausted")))return "Saldo OpenAI API habis (insufficient_quota). Tambahkan kredit API pada Billing OpenAI, lalu coba lagi.";if(code==429)return "OpenAI sedang membatasi permintaan (rate limit). Tunggu beberapa detik lalu coba lagi.";if(code==401)return "API key ditolak atau tidak valid. Periksa API KEY LUNA.";if(code==403)return "Akses API ditolak. Periksa izin/organisasi API.";if(code==404)return "Model atau endpoint OpenAI tidak ditemukan: "+model;return "OpenAI HTTP "+code+(type.isEmpty()?"":(" ["+type+"]"))+(msg.isEmpty()?"":": "+msg);}catch(Exception ignored){return "OpenAI HTTP "+code+": "+raw;}
     }
+    private String findOutputText(Object o){if(o instanceof JSONObject){JSONObject j=(JSONObject)o;if("output_text".equals(j.optString("type"))&&j.has("text"))return j.optString("text");JSONArray ns=j.names();if(ns!=null)for(int i=0;i<ns.length();i++){String s=findOutputText(j.opt(ns.optString(i)));if(s!=null)return s;}}else if(o instanceof JSONArray){JSONArray a=(JSONArray)o;for(int i=0;i<a.length();i++){String s=findOutputText(a.opt(i));if(s!=null)return s;}}return null;}
 }
