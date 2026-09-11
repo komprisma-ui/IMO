@@ -14,14 +14,14 @@ public final class LunaAgent {
  private static final ConversationMemory MEMORY=new ConversationMemory(); private static final int MAX_STEPS=24; private static final long MAX_RUNTIME=150000;
  public LunaAgent(MainActivity a,LunaAccessibilityService s,SecureKeyStore k,Callback c){activity=a;service=s;keyStore=k;callback=c;}
  public void run(String command){
-  OperatorState session=new OperatorState(command);
+  OperatorState session=new OperatorState(command); String previousTree="",previousAction="";
   try{
    if(command==null||command.trim().isEmpty()){callback.status("Katakan atau ketik tujuan Anda.");return;}
    String goal=command.trim(); MEMORY.addUser(goal);
    if(service==null){String x="Accessibility LUNA belum aktif. Aktifkan Accessibility agar saya dapat mengoperasikan Android.";callback.status("⚠ "+x);callback.speak(x);MEMORY.addAssistant(x);return;}
    if(runLocalCommand(goal))return;
    String key=keyStore.load(); if(key==null||key.trim().isEmpty())throw new IllegalStateException("API key Gemini belum diatur. Tekan GEMINI API KEY untuk menyimpan key.");
-   GeminiClient ai=new GeminiClient(key); String previousAction="",failure="";
+   GeminiClient ai=new GeminiClient(key); String failure="";
    for(int step=1;step<=MAX_STEPS&&!session.timedOut(MAX_RUNTIME);step++){
     if(service.isStopped())return;
     callback.status("👁 LUNA mengamati layar • langkah "+step+"/"+MAX_STEPS);
@@ -31,11 +31,11 @@ public final class LunaAgent {
     if(actions==null||actions.length()==0){String answer=plan.optString("speak","Baik, selesai.");callback.status("✓ "+answer);callback.speak(answer);MEMORY.addAssistant(answer);return;}
     JSONObject action=actions.optJSONObject(0); if(action==null){failure="invalid action";session.recovered();continue;}
     String sig=ActionVerifier.signature(action);
-    if(sig.equals(previousAction)&&ActionVerifier.sameScreen(image,session.lastSnapshot())){failure="loop "+sig;session.recovered();callback.status("↻ LUNA mendeteksi pengulangan. Mengganti strategi.");if(!wait(400))return;continue;}
+    if(sig.equals(previousAction)&&ActionVerifier.sameScreen(previousTree,tree)){failure="loop "+sig;session.recovered();callback.status("↻ LUNA mendeteksi pengulangan. Mengganti strategi.");if(!wait(450))return;continue;}
     if(plan.optBoolean("confirm",false)||isSensitive(action)){
      if(!callback.confirm(plan)){String x="Baik, tindakan saya batalkan.";callback.status("Tindakan dibatalkan.");callback.speak(x);MEMORY.addAssistant(x);return;}
     }
-    callback.status("⚙ "+describe(action)); session.acted(sig); previousAction=sig;
+    callback.status("⚙ "+describe(action)); session.acted(sig); previousAction=sig; previousTree=tree;
     boolean accepted=execute(action);
     if(!accepted){failure="execution failed: "+sig;session.recovered();callback.status("↻ Tindakan belum berhasil. Mencoba pendekatan lain…");if(!wait(350))return;continue;}
     if(!wait(700))return;
