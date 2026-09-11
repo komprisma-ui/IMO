@@ -17,27 +17,28 @@ public final class LunaAgent {
 
     public void run(String command){
         try{
-            OpenAIClient ai=new OpenAIClient(keyStore.load(),"gpt-5.6-luna"); Set<String> recent=new HashSet<>(); String last="";
+            OpenAIClient ai=new OpenAIClient(keyStore.load(),"gpt-5.6-luna"); Set<String> recent=new HashSet<>(); String last=""; String failure="";
             for(int step=1;step<=MAX_STEPS;step++){
                 if(shouldStop())return;
                 callback.status("👁 LUNA membaca aplikasi — langkah "+step+"/"+MAX_STEPS);
-                String image=capture(), snapshot=service.snapshot();
-                String prompt=command+"\n\nAGENT STEP "+step+"/"+MAX_STEPS+". Tujuan akhir harus tercapai. Amati kondisi TERKINI. Pilih tepat SATU action. Setelah action, langkah berikutnya akan memverifikasi. Tindakan terakhir="+last+". Jangan mengulang action yang sama jika tidak ada perubahan. Jika tujuan selesai, actions kosong. Sensitif (kirim/hapus/beli/transfer/keamanan/permanen) wajib confirm=true.";
+                String image=capture(), snapshot=service.snapshot(), pkg=service.currentPackage();
+                String prompt=command+"\n\nAGENT STEP "+step+"/"+MAX_STEPS+". Tujuan akhir harus tercapai. Amati kondisi TERKINI. APP PACKAGE AKTIF="+pkg+". Pilih tepat SATU action. Setelah action, langkah berikutnya akan memverifikasi. Tindakan terakhir="+last+". Jika action sebelumnya gagal="+failure+". Jangan mengulang action yang sama jika gagal/tidak ada perubahan; gunakan target lain atau strategi lain. Jika tujuan selesai, actions kosong. Sensitif (kirim/hapus/beli/transfer/keamanan/permanen) wajib confirm=true.";
                 JSONObject plan=new JSONObject(ai.plan(prompt,snapshot,image)); JSONArray actions=plan.optJSONArray("actions");
                 if(actions==null||actions.length()==0){callback.status("✓ "+plan.optString("speak","Tujuan selesai."));return;}
                 JSONObject action=actions.getJSONObject(0); String sig=signature(action);
-                if(recent.contains(sig)&&!"WAIT".equals(action.optString("type"))){callback.status("↻ LUNA menghindari pengulangan; membaca ulang layar…"); return;}
+                if(recent.contains(sig)&&!"WAIT".equals(action.optString("type"))){callback.status("↻ Target sama terdeteksi; LUNA menghentikan loop agar tidak menekan tombol berulang.");return;}
                 if(plan.optBoolean("confirm",false)&&!callback.confirm(plan)){callback.status("Tindakan dibatalkan pengguna.");return;}
                 recent.add(sig); last=sig; callback.status("⚙ "+describe(action));
                 boolean ok=execute(action);
-                if(!ok){callback.status("↻ Tindakan gagal; LUNA mencari cara lain…"); if(!pauseResponsive(350))return; continue;}
+                if(!ok){failure=sig; callback.status("↻ Tindakan gagal; LUNA mencari cara lain…"); if(!pauseResponsive(350))return; continue;}
+                failure="";
                 if(!pauseResponsive(650))return;
             }
             callback.status("LUNA berhenti setelah batas aman. Tujuan belum dapat diverifikasi.");
         }catch(Exception e){callback.status("LUNA error: "+e.getMessage());}
     }
 
-    private String describe(JSONObject a){String t=a.optString("type"); if("CLICK_TEXT".equals(t)||"CLICK_DESC".equals(t)||"CLICK_ID".equals(t)||"LONG_CLICK_TEXT".equals(t))return t+" → "+a.optString("value"); if("TYPE".equals(t))return "TYPE → "+a.optString("value"); if("OPEN_APP".equals(t))return "Membuka "+a.optString("label",a.optString("package")); if("SWIPE".equals(t)||"SCROLL".equals(t))return t+" "+a.optString("direction"); return t;}
+    private String describe(JSONObject a){String t=a.optString("type"); if("CLICK_TEXT".equals(t)||"CLICK_DESC".equals(t)||"CLICK_ID".equals(t)||"LONG_CLICK_TEXT".equals(t)||"LONG_CLICK_DESC".equals(t)||"LONG_CLICK_ID".equals(t))return t+" → "+a.optString("value"); if("TYPE".equals(t))return "TYPE → "+a.optString("value"); if("OPEN_APP".equals(t))return "Membuka "+a.optString("label",a.optString("package")); if("SWIPE".equals(t)||"SCROLL".equals(t))return t+" "+a.optString("direction"); return t;}
     private boolean shouldStop(){if(service==null||service.isStopped()){callback.status("■ STOP — LUNA dihentikan.");return true;}return false;}
     private boolean pauseResponsive(long ms){long end=System.currentTimeMillis()+ms;while(System.currentTimeMillis()<end){if(shouldStop())return false;try{Thread.sleep(Math.min(100,end-System.currentTimeMillis()));}catch(InterruptedException e){Thread.currentThread().interrupt();return false;}}return true;}
     private String signature(JSONObject x){return x.optString("type")+"|"+x.optString("value")+"|"+x.optString("package")+"|"+x.optString("label")+"|"+x.optString("direction")+"|"+x.optString("x")+"|"+x.optString("y");}
@@ -50,6 +51,8 @@ public final class LunaAgent {
         if("CLICK_ID".equals(type))return service.clickId(x.optString("value"));
         if("CLICK_POINT".equals(type))return service.clickPoint((float)x.optDouble("x",0),(float)x.optDouble("y",0));
         if("LONG_CLICK_TEXT".equals(type))return service.longClickText(x.optString("value"));
+        if("LONG_CLICK_DESC".equals(type))return service.longClickDescription(x.optString("value"));
+        if("LONG_CLICK_ID".equals(type))return service.longClickId(x.optString("value"));
         if("LONG_CLICK_POINT".equals(type))return service.longClickPoint((float)x.optDouble("x",0),(float)x.optDouble("y",0));
         if("TYPE".equals(type))return service.typeText(x.optString("value"));
         if("SCROLL".equals(type))return service.scroll(x.optString("direction"));
