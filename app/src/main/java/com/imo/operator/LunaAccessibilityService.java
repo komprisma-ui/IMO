@@ -43,10 +43,18 @@ public class LunaAccessibilityService extends AccessibilityService {
     public void resumeNow() { stopped = false; }
     public boolean isStopped() { return stopped; }
 
+    public String currentPackage() {
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        if (root != null && root.getPackageName() != null) return root.getPackageName().toString();
+        return "";
+    }
+
     public String snapshot() {
         AccessibilityNodeInfo root = getRootInActiveWindow();
         if (root == null) return "No active accessibility window.";
-        StringBuilder out = new StringBuilder(); appendNode(root, out, 0);
+        StringBuilder out = new StringBuilder();
+        out.append("[activePackage=").append(currentPackage()).append("]\n");
+        appendNode(root, out, 0);
         return out.length() > 16000 ? out.substring(0, 16000) : out.toString();
     }
 
@@ -92,37 +100,47 @@ public class LunaAccessibilityService extends AccessibilityService {
         @Override public void onFailure(int errorCode) { callback.onResult(null); }
     }
 
-    public boolean clickText(String value) { return clickMatch(value, false, false); }
-    public boolean clickDescription(String value) { return clickMatch(value, true, false); }
-    public boolean clickId(String value) { return clickMatch(value, false, true); }
+    public boolean clickText(String value) { return clickMatch(value, false, false, false); }
+    public boolean clickDescription(String value) { return clickMatch(value, true, false, false); }
+    public boolean clickId(String value) { return clickMatch(value, false, true, false); }
     public boolean longClickText(String value) { return clickMatch(value, false, false, true); }
+    public boolean longClickDescription(String value) { return clickMatch(value, true, false, true); }
+    public boolean longClickId(String value) { return clickMatch(value, false, true, true); }
 
-    private boolean clickMatch(String value, boolean descOnly, boolean idOnly) { return clickMatch(value, descOnly, idOnly, false); }
     private boolean clickMatch(String value, boolean descOnly, boolean idOnly, boolean longClick) {
         if (stopped || value == null || value.trim().isEmpty()) return false;
         AccessibilityNodeInfo root = getRootInActiveWindow(); if (root == null) return false;
-        List<AccessibilityNodeInfo> nodes = new ArrayList<>(); collectMatches(root, value.toLowerCase(Locale.ROOT), descOnly, idOnly, nodes);
-        for (AccessibilityNodeInfo n : nodes) {
-            AccessibilityNodeInfo p = n;
-            while (p != null) {
-                if (p.isVisibleToUser() && ((longClick && p.isLongClickable()) || (!longClick && p.isClickable()))) {
-                    return p.performAction(longClick ? AccessibilityNodeInfo.ACTION_LONG_CLICK : AccessibilityNodeInfo.ACTION_CLICK);
-                }
-                p = p.getParent();
-            }
-        }
+        List<AccessibilityNodeInfo> exact = new ArrayList<>(), contains = new ArrayList<>();
+        collectMatches(root, value.toLowerCase(Locale.ROOT).trim(), descOnly, idOnly, exact, contains);
+        for (AccessibilityNodeInfo n : exact) if (performOnClickableAncestor(n, longClick)) return true;
+        for (AccessibilityNodeInfo n : contains) if (performOnClickableAncestor(n, longClick)) return true;
         return false;
     }
 
-    private void collectMatches(AccessibilityNodeInfo n, String needle, boolean descOnly, boolean idOnly, List<AccessibilityNodeInfo> out) {
+    private void collectMatches(AccessibilityNodeInfo n, String needle, boolean descOnly, boolean idOnly,
+                                 List<AccessibilityNodeInfo> exact, List<AccessibilityNodeInfo> contains) {
         if (n == null) return;
         CharSequence a = n.getText(), b = n.getContentDescription(), c = n.getViewIdResourceName();
         String s;
         if (idOnly) s = c == null ? "" : c.toString();
         else if (descOnly) s = b == null ? "" : b.toString();
         else s = (a == null ? "" : a.toString()) + " " + (b == null ? "" : b.toString());
-        if (s.toLowerCase(Locale.ROOT).contains(needle)) out.add(n);
-        for (int i = 0; i < n.getChildCount(); i++) collectMatches(n.getChild(i), needle, descOnly, idOnly, out);
+        String lower = s.toLowerCase(Locale.ROOT).trim();
+        if (!lower.isEmpty()) {
+            if (lower.equals(needle)) exact.add(n);
+            else if (lower.contains(needle)) contains.add(n);
+        }
+        for (int i = 0; i < n.getChildCount(); i++) collectMatches(n.getChild(i), needle, descOnly, idOnly, exact, contains);
+    }
+
+    private boolean performOnClickableAncestor(AccessibilityNodeInfo node, boolean longClick) {
+        AccessibilityNodeInfo p = node;
+        for (int depth = 0; p != null && depth < 8; depth++, p = p.getParent()) {
+            if (!p.isVisibleToUser()) continue;
+            if (longClick && p.isLongClickable()) return p.performAction(AccessibilityNodeInfo.ACTION_LONG_CLICK);
+            if (!longClick && p.isClickable()) return p.performAction(AccessibilityNodeInfo.ACTION_CLICK);
+        }
+        return false;
     }
 
     public boolean clickPoint(float x, float y) {
@@ -134,6 +152,8 @@ public class LunaAccessibilityService extends AccessibilityService {
         return tap(x, y, 650);
     }
     private boolean tap(float x, float y, long duration) {
+        android.util.DisplayMetrics dm = getResources().getDisplayMetrics();
+        if (x < 0 || y < 0 || x >= dm.widthPixels || y >= dm.heightPixels) return false;
         Path path = new Path(); path.moveTo(x, y);
         GestureDescription gesture = new GestureDescription.Builder().addStroke(new GestureDescription.StrokeDescription(path, 0, duration)).build();
         return dispatchGesture(gesture, null, null);
