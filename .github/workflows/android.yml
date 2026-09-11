@@ -23,11 +23,6 @@ jobs:
         uses: android-actions/setup-android@v3
       - name: Install Android SDK
         run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
-      - name: Patch Java compatibility and voice reliability
-        run: |
-          FILE="app/src/main/java/com/imo/operator/MainActivity.java"
-          sed -i 's/@Override protected void onRequestPermissionsResult/@Override public void onRequestPermissionsResult/' "$FILE"
-          sed -i 's/if(voiceMode&&!speaking&&!recognitionBusy)postListen(700);/if(voiceMode&&!speaking&&!recognitionBusy&&!ttsPending)postListen(700);/' "$FILE"
       - name: Build release APK
         run: gradle assembleRelease --stacktrace
       - name: Verify APK
