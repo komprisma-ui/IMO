@@ -19,8 +19,8 @@ public final class LunaAgent {
             if(command==null||command.trim().isEmpty()){callback.status("Ketik atau ucapkan sesuatu kepada LUNA.");return;}
             String clean=command.trim(); MEMORY.addUser(clean);
             if(service!=null && runLocalCommand(clean))return;
-            String key=keyStore.load(); if(key==null||key.trim().isEmpty())throw new IllegalStateException("API key belum diatur. Tekan API KEY untuk memasukkannya.");
-            OpenAIClient ai=new OpenAIClient(key,"gpt-5.6-sol"); String last="",failure="",previousSnapshot="";
+            String key=keyStore.load(); if(key==null||key.trim().isEmpty())throw new IllegalStateException("API key Gemini belum diatur. Tekan API KEY untuk memasukkan key Gemini.");
+            GeminiClient ai=new GeminiClient(key); String last="",failure="",previousSnapshot="";
             for(int step=1;step<=MAX_STEPS;step++){
                 if(shouldStop())return;
                 callback.status(service==null?"🧠 LUNA sedang berpikir…":"👁 Mengamati layar • langkah "+step+"/"+MAX_STEPS);
@@ -56,7 +56,7 @@ public final class LunaAgent {
         return false;
     }
     private void localDone(String answer){callback.status("✓ "+answer);callback.speak(answer);MEMORY.addAssistant(answer);}
-    private String friendlyError(Exception e){String m=e.getMessage()==null?"Kendala tidak diketahui.":e.getMessage();if(m.contains("insufficient_quota")||m.contains("credit_balance_exhausted")||m.contains("no credits"))return "Saldo OpenAI API habis. Tambahkan kredit API lalu coba lagi.";if(m.contains("HTTP 401"))return "API key tidak valid atau sudah tidak aktif. Periksa API KEY LUNA.";if(m.contains("HTTP 403"))return "Akses API ditolak. Periksa organisasi dan izin API key.";if(m.contains("HTTP 429"))return "Permintaan ke OpenAI sedang dibatasi. Tunggu sebentar lalu coba lagi.";if(m.contains("HTTP 5"))return "Server OpenAI sedang bermasalah. Coba lagi beberapa saat.";return "Terjadi kendala: "+m;}
+    private String friendlyError(Exception e){String m=e.getMessage()==null?"Kendala tidak diketahui.":e.getMessage();if(m.contains("API key Gemini"))return m;if(m.contains("Permintaan Gemini"))return m;if(m.contains("Batas penggunaan Gemini"))return m;if(m.contains("Server Gemini"))return m;if(m.contains("Gemini HTTP 401")||m.contains("Gemini HTTP 403"))return "API key Gemini ditolak. Pastikan key aktif dan memiliki akses Gemini API.";if(m.contains("Gemini HTTP 429"))return "Batas penggunaan Gemini tercapai. Tunggu sebentar lalu coba lagi.";return "Terjadi kendala: "+m;}
     private String describe(JSONObject a){String t=a.optString("type");if(t.contains("CLICK")||t.contains("LONG_CLICK"))return t+" → "+a.optString("value");if("TYPE".equals(t))return "Mengetik → "+a.optString("value");if("OPEN_APP".equals(t))return "Membuka "+a.optString("label",a.optString("package"));if("SWIPE".equals(t)||"SCROLL".equals(t))return t+" "+a.optString("direction");if("SET_VOLUME".equals(t))return "Volume → "+a.optInt("level",50)+"%";return t;}
     private boolean shouldStop(){return service!=null&&service.isStopped()?stopNotice():false;}
     private boolean stopNotice(){callback.status("■ STOP — LUNA dihentikan.");return true;}
