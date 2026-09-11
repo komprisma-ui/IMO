@@ -23,6 +23,9 @@ jobs:
         uses: android-actions/setup-android@v3
       - name: Install Android SDK
         run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+      - name: Patch Java compatibility
+        run: |
+          sed -i 's/@Override protected void onRequestPermissionsResult/@Override public void onRequestPermissionsResult/' app/src/main/java/com/imo/operator/MainActivity.java
       - name: Build release APK
         run: gradle assembleRelease --stacktrace
       - name: Verify APK
@@ -40,4 +43,4 @@ jobs:
           gh release create "$TAG" app/build/outputs/apk/release/app-release.apk \
             --repo "${{ github.repository }}" \
             --title "LUNA Android Control 2.0.0" \
-            --notes "Personal development APK. Enable LUNA Accessibility Service after installation. Configure the existing OpenAI API key locally inside the app."
+            --notes "LUNA Android operator with Indonesian voice interaction, Gemini 2.5 Flash, Accessibility control, screen observation, action execution and verification. Enable LUNA Accessibility Service after installation and configure the Gemini API key locally."
