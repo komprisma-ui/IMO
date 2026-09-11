@@ -152,7 +152,7 @@ public class MainActivity extends Activity {
             @Override public void status(String s){runUi(()->setStatus(s));}
             @Override public void speak(String s){runUi(()->speakLuna(s));}
             @Override public boolean confirm(JSONObject plan){return askConfirmation(plan);}
-            @Override public void finished(){runUi(()->{running=false;if(voiceMode&&!speaking&&!recognitionBusy)postListen(700);});}
+            @Override public void finished(){runUi(()->{running=false;if(voiceMode&&!speaking&&!recognitionBusy&&!ttsPending)postListen(700);});}
         }).run(cmd);});
     }
     private boolean askConfirmation(JSONObject plan){
@@ -166,7 +166,7 @@ public class MainActivity extends Activity {
     private void setStatus(String s){runUi(()->{if(status!=null)status.setText(s);});}
     private void runUi(Runnable r){if(Looper.myLooper()==Looper.getMainLooper())r.run();else runOnUiThread(r);}
 
-    @Override protected void onRequestPermissionsResult(int requestCode,String[] permissions,int[] grants){super.onRequestPermissionsResult(requestCode,permissions,grants);if(requestCode==REQ_MIC){if(grants.length>0&&grants[0]==PackageManager.PERMISSION_GRANTED){voiceMode=true;mic.setText("STOP MIC");refreshState();postListen(250);}else{voiceMode=false;setStatus("⚠ Izin mikrofon diperlukan agar LUNA dapat mendengar.");refreshState();}}}
+    @Override public void onRequestPermissionsResult(int requestCode,String[] permissions,int[] grants){super.onRequestPermissionsResult(requestCode,permissions,grants);if(requestCode==REQ_MIC){if(grants.length>0&&grants[0]==PackageManager.PERMISSION_GRANTED){voiceMode=true;mic.setText("STOP MIC");refreshState();postListen(250);}else{voiceMode=false;setStatus("⚠ Izin mikrofon diperlukan agar LUNA dapat mendengar.");refreshState();}}}
     @Override protected void onResume(){super.onResume();new Handler(Looper.getMainLooper()).postDelayed(this::refreshState,300);}
     @Override protected void onDestroy(){voiceMode=false;destroyRecognizer();if(tts!=null){try{tts.stop();tts.shutdown();}catch(Exception ignored){}}worker.shutdownNow();super.onDestroy();}
 }
