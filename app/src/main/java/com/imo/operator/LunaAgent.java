@@ -32,13 +32,22 @@ public final class LunaAgent {
                 if(service==null){String answer="Untuk melakukan tindakan pada Android, aktifkan Accessibility LUNA terlebih dahulu.";callback.status("⚠ "+answer);callback.speak(answer);MEMORY.addAssistant(answer);return;}
                 JSONObject action=actions.getJSONObject(0);String sig=signature(action);
                 if(sig.equals(last)&&snapshot.equals(previousSnapshot)&&!"WAIT".equals(action.optString("type"))){String answer="Saya berhenti karena layar tidak berubah dan tindakan yang sama tidak aman untuk diulang.";callback.status("↻ "+answer);callback.speak(answer);MEMORY.addAssistant(answer);return;}
-                if(plan.optBoolean("confirm",false)&&!callback.confirm(plan)){String answer="Baik, saya batalkan tindakan itu.";callback.status("Tindakan dibatalkan pengguna.");callback.speak(answer);MEMORY.addAssistant(answer);return;}
+                boolean needsConfirm=plan.optBoolean("confirm",false)||isSensitive(action);
+                if(needsConfirm&&!callback.confirm(plan)){String answer="Baik, saya batalkan tindakan itu.";callback.status("Tindakan dibatalkan pengguna.");callback.speak(answer);MEMORY.addAssistant(answer);return;}
                 last=sig;previousSnapshot=snapshot;failure="";String narration=plan.optString("speak","");callback.status("⚙ "+describe(action)+(narration.isEmpty()?"":"\n"+narration));
                 boolean ok=execute(action);if(!ok){failure=sig;callback.status("↻ Tindakan belum berhasil. Saya membaca layar lagi dan mencoba strategi lain…");if(!pauseResponsive(500))return;continue;}
                 callback.status("✓ Tindakan dikirim. Memverifikasi layar…");if(!pauseResponsive(850))return;
             }
             String answer="Saya belum bisa memastikan tugas selesai. Saya berhenti agar tidak melakukan tindakan yang salah.";callback.status("LUNA berhenti setelah batas aman.");callback.speak(answer);MEMORY.addAssistant(answer);
         }catch(Exception e){String msg=friendlyError(e);callback.status("LUNA: "+msg);callback.speak(msg);MEMORY.addAssistant(msg);}finally{callback.finished();}
+    }
+
+    private boolean isSensitive(JSONObject a){
+        String t=a.optString("type","").toUpperCase(Locale.ROOT); String v=a.optString("value","").toLowerCase(Locale.ROOT);
+        if(t.contains("DELETE")||t.contains("SEND")||t.contains("PURCHASE")||t.contains("TRANSFER")||t.contains("PAY"))return true;
+        if(t.equals("TYPE") && (v.contains("otp")||v.contains("password")||v.contains("kata sandi")||v.contains("pin")||v.contains("kode verifikasi")))return true;
+        if(t.equals("CLICK_TEXT")||t.equals("CLICK_DESC")){String s=v;return s.contains("kirim")||s.contains("hapus")||s.contains("beli")||s.contains("bayar")||s.contains("transfer")||s.contains("setuju")||s.contains("pesan sekarang");}
+        return false;
     }
 
     private boolean runLocalCommand(String raw){
