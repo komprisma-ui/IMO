@@ -2,8 +2,6 @@ package com.imo.operator;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
-import java.util.HashSet;
-import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -28,22 +26,21 @@ public final class LunaAgent {
 
     public void run(String command) {
         try {
-            OpenAIClient ai=new OpenAIClient(keyStore.load(),"gpt-5.6-sol");
-            Set<String> recent=new HashSet<>(); String last=""; String failure="";
+            String key=keyStore.load();
+            if(key==null||key.trim().isEmpty()) throw new IllegalStateException("API key belum diatur. Tekan API KEY untuk memasukkannya.");
+            OpenAIClient ai=new OpenAIClient(key,"gpt-5.6-sol");
+            String last="", failure="", previousSnapshot="";
             for(int step=1; step<=MAX_STEPS; step++) {
                 if(shouldStop()) return;
-                callback.status("👁 LUNA beobachtet den aktuellen Bildschirm — Schritt "+step+"/"+MAX_STEPS);
+                callback.status("👁 Mengamati layar • langkah "+step+"/"+MAX_STEPS);
                 String image=capture(), snapshot=service.snapshot(), pkg=service.currentPackage();
-                String prompt=""+
-                        "ZIEL PENGGUNA:\n"+command+
-                        "\n\nAGENT STEP "+step+"/"+MAX_STEPS+
-                        ". Erreiche tujuan akhir, jangan sekadar menjawab. Periksa layar TERKINI setelah setiap tindakan."+
-                        " APP PACKAGE AKTIF="+pkg+
-                        ". Tindakan terakhir="+last+". Kegagalan terakhir="+failure+"."+
-                        " Jika target tidak ditemukan, ubah strategi: gunakan ID, text, description, scroll, swipe, back, atau koordinat dari screenshot."+
-                        " Jangan menekan target yang sama berulang kali tanpa bukti layar berubah."+
-                        " Jika tujuan sudah tercapai, actions kosong dan speak harus menjelaskan hasil secara natural dalam bahasa Indonesia."+
-                        " Untuk kirim/hapus/beli/transfer/keamanan/perubahan permanen, confirm=true.";
+                String prompt="TUJUAN PENGGUNA:\n"+command+
+                        "\n\nLANGKAH "+step+"/"+MAX_STEPS+
+                        "\nPACKAGE AKTIF="+pkg+
+                        "\nTINDAKAN TERAKHIR="+last+
+                        "\nKEGAGALAN TERAKHIR="+failure+
+                        "\nLAYAR BERUBAH SEJAK LANGKAH SEBELUMNYA="+(!snapshot.equals(previousSnapshot))+
+                        "\n\nSelesaikan tujuan akhir, jangan sekadar menjawab. Periksa layar terkini setelah setiap tindakan. Gunakan ID bila tersedia, lalu text/description, lalu koordinat screenshot yang benar-benar terlihat. Jangan mengarang target. Jika target belum terlihat, scroll/swipe atau ubah strategi. Jangan mengulang tindakan yang sama jika layar tidak berubah. Jika tujuan sudah tercapai, actions kosong dan speak menjelaskan hasil dalam bahasa Indonesia. Tindakan sensitif seperti kirim, hapus, beli, transfer, keamanan, atau perubahan permanen wajib confirm=true.";
                 JSONObject plan=new JSONObject(ai.plan(prompt,snapshot,image));
                 JSONArray actions=plan.optJSONArray("actions");
                 if(actions==null || actions.length()==0) {
@@ -51,40 +48,48 @@ public final class LunaAgent {
                     callback.status("✓ "+answer); callback.speak(answer); return;
                 }
                 JSONObject action=actions.getJSONObject(0); String sig=signature(action);
-                if(recent.contains(sig) && !"WAIT".equals(action.optString("type"))) {
-                    callback.status("↻ Target sama terdeteksi tanpa kemajuan. LUNA menghentikan loop agar aman.");
-                    callback.speak("Saya berhenti karena target yang sama terus muncul tanpa perubahan layar.");
+                if(sig.equals(last) && snapshot.equals(previousSnapshot) && !"WAIT".equals(action.optString("type"))) {
+                    callback.status("↻ Layar tidak berubah setelah tindakan yang sama. Saya hentikan agar tidak terjadi klik berulang.");
+                    callback.speak("Saya berhenti karena layar tidak berubah dan tindakan yang sama tidak aman untuk diulang.");
                     return;
                 }
                 if(plan.optBoolean("confirm",false) && !callback.confirm(plan)) {
                     callback.status("Tindakan dibatalkan pengguna."); callback.speak("Baik, saya batalkan tindakan itu."); return;
                 }
-                recent.add(sig); last=sig;
+                last=sig; previousSnapshot=snapshot; failure="";
                 String narration=plan.optString("speak","");
                 callback.status("⚙ "+describe(action)+(narration.isEmpty()?"":"\n"+narration));
                 boolean ok=execute(action);
                 if(!ok) {
-                    failure=sig; callback.status("↻ Tindakan gagal. Saya akan mencoba strategi lain…");
-                    if(!pauseResponsive(400)) return;
+                    failure=sig; callback.status("↻ Tindakan belum berhasil. Saya akan membaca layar lagi dan mencoba strategi lain…");
+                    if(!pauseResponsive(500)) return;
                     continue;
                 }
-                failure="";
-                if(!pauseResponsive(750)) return;
+                callback.status("✓ Tindakan dikirim. Memverifikasi layar…");
+                if(!pauseResponsive(850)) return;
             }
             callback.status("LUNA berhenti setelah batas aman. Tujuan belum dapat diverifikasi.");
             callback.speak("Saya belum bisa memastikan tugas selesai. Saya berhenti agar tidak melakukan tindakan yang salah.");
         } catch(Exception e) {
-            callback.status("LUNA error: "+e.getMessage());
-            callback.speak("Terjadi kendala saat menjalankan perintah: "+e.getMessage());
-        } finally {
-            callback.finished();
-        }
+            callback.status("LUNA error: "+friendlyError(e));
+            callback.speak(friendlyError(e));
+        } finally { callback.finished(); }
+    }
+
+    private String friendlyError(Exception e){
+        String m=e.getMessage()==null?"Kendala tidak diketahui.":e.getMessage();
+        if(m.contains("insufficient_quota")||m.contains("credit_balance_exhausted")||m.contains("no credits")) return "Saldo OpenAI API habis. Tambahkan kredit API lalu coba lagi.";
+        if(m.contains("HTTP 401")) return "API key tidak valid atau sudah tidak aktif. Periksa API KEY LUNA.";
+        if(m.contains("HTTP 403")) return "Akses API ditolak. Periksa organisasi dan izin API key.";
+        if(m.contains("HTTP 429")) return "Permintaan ke OpenAI sedang dibatasi. Tunggu sebentar lalu coba lagi.";
+        if(m.contains("HTTP 5")) return "Server OpenAI sedang bermasalah. Coba lagi beberapa saat.";
+        return "Terjadi kendala: "+m;
     }
 
     private String describe(JSONObject a) {
         String t=a.optString("type");
         if(t.contains("CLICK") || t.contains("LONG_CLICK")) return t+" → "+a.optString("value");
-        if("TYPE".equals(t)) return "TYPE → "+a.optString("value");
+        if("TYPE".equals(t)) return "Mengetik → "+a.optString("value");
         if("OPEN_APP".equals(t)) return "Membuka "+a.optString("label",a.optString("package"));
         if("SWIPE".equals(t)||"SCROLL".equals(t)) return t+" "+a.optString("direction");
         if("SET_VOLUME".equals(t)) return "Volume → "+a.optInt("level",50)+"%";
