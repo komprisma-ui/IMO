@@ -1,4 +1,5 @@
 name: LUNA Android Control Build
+
 on:
   push:
     branches: [ main, "feature/**" ]
@@ -11,8 +12,10 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    name: Build Android APK
+    runs-on: windows-2025
+    timeout-minutes: 30
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -33,21 +36,27 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Install Android SDK packages
+        shell: pwsh
         run: |
-          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager --licenses | Out-Null
           sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Build release APK
-        run: gradle --no-daemon assembleRelease --stacktrace
+        shell: pwsh
+        run: |
+          gradle --no-daemon assembleRelease --stacktrace
 
       - name: Verify APK
+        shell: pwsh
         run: |
-          APK="$(find app/build/outputs/apk/release -type f -name '*.apk' | head -n 1)"
-          test -n "$APK"
-          test -s "$APK"
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
-          unzip -t "$APK" >/dev/null
-          sha256sum "$APK"
+          $apk = Get-ChildItem -Path "app/build/outputs/apk/release" -Filter "*.apk" -File | Select-Object -First 1
+          if ($null -eq $apk) { throw "Release APK not found" }
+          if ($apk.Length -le 0) { throw "Release APK is empty" }
+          & "$env:ANDROID_HOME/build-tools/35.0.0/apksigner.bat" verify --verbose $apk.FullName
+          if ($LASTEXITCODE -ne 0) { throw "APK signature verification failed" }
+          Write-Host "APK: $($apk.FullName)"
+          Write-Host "SIZE: $($apk.Length) bytes"
+          (Get-FileHash -Algorithm SHA256 $apk.FullName).Hash
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -60,9 +69,10 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
+        shell: pwsh
         run: |
-          TAG="imo-2.2.0-${{ github.run_number }}"
-          gh release create "$TAG" app/build/outputs/apk/release/app-release.apk \
-            --repo "${{ github.repository }}" \
-            --title "IMO Full Device Agent 2.2.0" \
+          $tag = "imo-2.2.0-${{ github.run_number }}"
+          gh release create $tag "app/build/outputs/apk/release/app-release.apk" `
+            --repo "${{ github.repository }}" `
+            --title "IMO Full Device Agent 2.2.0" `
             --notes "Validated IMO Android full-device agent build."
