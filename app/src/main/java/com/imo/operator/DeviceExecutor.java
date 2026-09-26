@@ -104,5 +104,20 @@ public final class DeviceExecutor {
     public int getVolumePercent(){
         try{AudioManager a=(AudioManager)context.getSystemService(Context.AUDIO_SERVICE);if(a==null)return -1;int max=a.getStreamMaxVolume(AudioManager.STREAM_MUSIC);if(max<=0)return 0;return Math.round(a.getStreamVolume(AudioManager.STREAM_MUSIC)*100f/max);}catch(Exception e){return -1;}
     }
+    public String listLaunchableApps(){
+        try{
+            PackageManager pm=context.getPackageManager();
+            List<ApplicationInfo> apps=pm.getInstalledApplications(PackageManager.GET_META_DATA);
+            StringBuilder out=new StringBuilder();
+            for(ApplicationInfo app:apps){
+                if(pm.getLaunchIntentForPackage(app.packageName)==null)continue;
+                CharSequence label=pm.getApplicationLabel(app);
+                if(label==null)continue;
+                if(out.length()>12000)break;
+                out.append(label).append(" | ").append(app.packageName).append("\n");
+            }
+            return out.toString().trim();
+        }catch(Exception e){return "";}
+    }
     public void delay(long ms){SystemClock.sleep(Math.min(Math.max(ms,0),5000));}
 }
