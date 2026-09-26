@@ -124,7 +124,7 @@ public class MainActivity extends Activity {
             Button b=dialog.getButton(AlertDialog.BUTTON_POSITIVE);
             b.setOnClickListener(v->{
                 if(index[0]>=3)return;
-                b.setEnabled(false);int n=index[0]+1;stateView.setText("🎙 Merekam sampel "+n+"/3… ucapkan: "Halo LUNA, ini suara saya."");setStatus("🎙 Pendaftaran suara: sampel "+n+"/3…");
+                b.setEnabled(false);int n=index[0]+1;stateView.setText("🎙 Merekam sampel "+n+"/3… ucapkan: \"Halo LUNA, ini suara saya.\"");setStatus("🎙 Pendaftaran suara: sampel "+n+"/3…");
                 voiceProfile.capture(1800,(feature,error)->runUi(()->{
                     if(error!=null){stateView.setText("⚠ "+error);setStatus("⚠ Gagal merekam sampel "+n+": "+error);b.setEnabled(true);return;}
                     if(feature==null){stateView.setText("⚠ Audio tidak valid.");b.setEnabled(true);return;}
