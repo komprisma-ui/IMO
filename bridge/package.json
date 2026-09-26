@@ -1,0 +1,1 @@
+{"private":true,"name":"imo-bridge-relay","version":"1.0.0","main":"server.js","engines":{"node":">=18"},"dependencies":{"ws":"^8.18.0"}}
