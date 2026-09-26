@@ -37,7 +37,11 @@ public class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle b){super.onCreate(b);requestNotificationPermissionIfNeeded();getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(Color.rgb(2,7,16));keyStore=new SecureKeyStore(this);bridgeStore=new BridgeStore(this);buildUi();initTts();}
 
-    private void requestNotificationPermissionIfNeeded(){\n        if(Build.VERSION.SDK_INT>=33&&ContextCompat.checkSelfPermission(this,Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED) ActivityCompat.requestPermissions(this,new String[]{Manifest.permission.POST_NOTIFICATIONS},REQ_NOTIFICATIONS);\n    }\n\n    private void initTts(){
+    private void requestNotificationPermissionIfNeeded(){
+        if(Build.VERSION.SDK_INT>=33&&ContextCompat.checkSelfPermission(this,Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED) ActivityCompat.requestPermissions(this,new String[]{Manifest.permission.POST_NOTIFICATIONS},REQ_NOTIFICATIONS);
+    }
+
+    private void initTts(){
         tts=new TextToSpeech(this,result->{
             ttsReady=result==TextToSpeech.SUCCESS;
             if(!ttsReady){setStatus("⚠ Mesin suara LUNA belum siap. Aktifkan Text-to-Speech Android.");return;}
