@@ -43,6 +43,39 @@ public class LunaAccessibilityService extends AccessibilityService {
         AccessibilityNodeInfo root=getRootInActiveWindow();if(root==null)return "No active accessibility window.";
         StringBuilder out=new StringBuilder();out.append("[activePackage=").append(currentPackage()).append("]\n");appendNode(root,out,0);return out.length()>16000?out.substring(0,16000):out.toString();
     }
+
+    /** Structured UI map for the remote Luna controller. Bounded to 500 nodes. */
+    public org.json.JSONArray snapshotNodes(){
+        org.json.JSONArray nodes=new org.json.JSONArray();
+        AccessibilityNodeInfo root=getRootInActiveWindow();
+        if(root!=null) appendNodeJson(root,nodes,0);
+        return nodes;
+    }
+
+    private void appendNodeJson(AccessibilityNodeInfo n,org.json.JSONArray out,int depth){
+        if(n==null||depth>28||out.length()>=500)return;
+        try{
+            CharSequence text=n.getText(),desc=n.getContentDescription(),id=n.getViewIdResourceName();
+            Rect r=new Rect();n.getBoundsInScreen(r);
+            boolean useful=(text!=null&&text.length()>0)||(desc!=null&&desc.length()>0)||id!=null||
+                    n.isClickable()||n.isEditable()||n.isScrollable()||n.isFocusable();
+            if(useful){
+                org.json.JSONObject x=new org.json.JSONObject();
+                x.put("class",n.getClassName()==null?"":n.getClassName().toString());
+                x.put("id",id==null?"":id.toString());
+                x.put("text",text==null?"":text.toString());
+                x.put("desc",desc==null?"":desc.toString());
+                x.put("clickable",n.isClickable());x.put("longClickable",n.isLongClickable());
+                x.put("editable",n.isEditable());x.put("focusable",n.isFocusable());
+                x.put("focused",n.isFocused());x.put("scrollable",n.isScrollable());
+                x.put("enabled",n.isEnabled());x.put("visible",n.isVisibleToUser());
+                org.json.JSONObject box=new org.json.JSONObject();
+                box.put("left",r.left);box.put("top",r.top);box.put("right",r.right);box.put("bottom",r.bottom);
+                x.put("bounds",box);out.put(x);
+            }
+        }catch(Throwable ignored){}
+        for(int i=0;i<n.getChildCount()&&out.length()<500;i++)appendNodeJson(n.getChild(i),out,depth+1);
+    }
     private void appendNode(AccessibilityNodeInfo n,StringBuilder out,int depth){
         if(n==null||depth>28||out.length()>16000)return;
         CharSequence text=n.getText(),desc=n.getContentDescription(),id=n.getViewIdResourceName();
