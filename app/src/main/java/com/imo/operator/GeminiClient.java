@@ -37,7 +37,7 @@ public final class GeminiClient {
         prompt.append("TUJUAN/PERINTAH PENGGUNA:\n").append(command == null ? "" : command)
                 .append("\n\nRIWAYAT:\n").append(conversation == null || conversation.isEmpty() ? "Tidak ada" : conversation)
                 .append("\n\nACCESSIBILITY TREE TERKINI:\n").append(screen == null ? "" : screen)
-                .append("\n\nTINDAKAN YANG DIDUKUNG:\nOPEN_APP, CLICK_TEXT, CLICK_DESC, CLICK_ID, CLICK_POINT, LONG_CLICK_TEXT, LONG_CLICK_DESC, LONG_CLICK_ID, LONG_CLICK_POINT, TYPE, SCROLL, SWIPE, BACK, HOME, RECENTS, NOTIFICATIONS, QUICK_SETTINGS, WAIT, OPEN_URL, OPEN_SETTINGS, SET_VOLUME, MUTE.\n")
+                .append("\n\nTINDAKAN YANG DIDUKUNG:\nOPEN_APP, CLICK_TEXT, CLICK_DESC, CLICK_ID, CLICK_POINT, LONG_CLICK_TEXT, LONG_CLICK_DESC, LONG_CLICK_ID, LONG_CLICK_POINT, TYPE, SCROLL, SWIPE, BACK, HOME, RECENTS, NOTIFICATIONS, QUICK_SETTINGS, POWER_DIALOG, LOCK_SCREEN, SPLIT_SCREEN, CLEAR_TEXT, LIST_APPS, WAIT, OPEN_URL, OPEN_SETTINGS, SET_VOLUME, MUTE.\n")
                 .append("Jika tujuan sudah tercapai berdasarkan layar saat ini, done=true dan actions=[]; jika belum, done=false dan pilih satu action. Jangan menyatakan selesai hanya karena action berhasil dieksekusi.");
         parts.put(new JSONObject().put("text", prompt.toString()));
         if (imageBase64Jpeg != null && !imageBase64Jpeg.isEmpty()) parts.put(new JSONObject().put("inline_data", new JSONObject().put("mime_type", "image/jpeg").put("data", imageBase64Jpeg)));
@@ -71,7 +71,7 @@ public final class GeminiClient {
     private JSONObject responseSchema() throws Exception {
         JSONObject action = new JSONObject();
         JSONObject props = new JSONObject();
-        props.put("type", new JSONObject().put("type", "string").put("enum", new JSONArray(new String[]{"OPEN_APP","CLICK_TEXT","CLICK_DESC","CLICK_ID","CLICK_POINT","LONG_CLICK_TEXT","LONG_CLICK_DESC","LONG_CLICK_ID","LONG_CLICK_POINT","TYPE","SCROLL","SWIPE","BACK","HOME","RECENTS","NOTIFICATIONS","QUICK_SETTINGS","WAIT","OPEN_URL","OPEN_SETTINGS","SET_VOLUME","MUTE"})));
+        props.put("type", new JSONObject().put("type", "string").put("enum", new JSONArray(new String[]{"OPEN_APP","CLICK_TEXT","CLICK_DESC","CLICK_ID","CLICK_POINT","LONG_CLICK_TEXT","LONG_CLICK_DESC","LONG_CLICK_ID","LONG_CLICK_POINT","TYPE","SCROLL","SWIPE","BACK","HOME","RECENTS","NOTIFICATIONS","QUICK_SETTINGS","POWER_DIALOG","LOCK_SCREEN","SPLIT_SCREEN","CLEAR_TEXT","LIST_APPS","WAIT","OPEN_URL","OPEN_SETTINGS","SET_VOLUME","MUTE"})));
         props.put("value", new JSONObject().put("type", "string")); props.put("package", new JSONObject().put("type", "string")); props.put("label", new JSONObject().put("type", "string")); props.put("direction", new JSONObject().put("type", "string")); props.put("delayMs", new JSONObject().put("type", "integer")); props.put("distance", new JSONObject().put("type", "integer")); props.put("durationMs", new JSONObject().put("type", "integer")); props.put("x", new JSONObject().put("type", "number")); props.put("y", new JSONObject().put("type", "number")); props.put("level", new JSONObject().put("type", "integer"));
         action.put("type", "object").put("properties", props).put("required", new JSONArray(new String[]{"type"})).put("additionalProperties", false);
         JSONObject schema = new JSONObject().put("type", "object");
