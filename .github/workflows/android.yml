@@ -36,8 +36,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TAG="luna-2.0.0-${{ github.run_number }}"
+          TAG="imo-2.2.0-${{ github.run_number }}"
           gh release create "$TAG" app/build/outputs/apk/release/app-release.apk \
             --repo "${{ github.repository }}" \
-            --title "LUNA Android Control 2.0.0" \
-            --notes "LUNA Android operator with Indonesian voice interaction, Gemini 2.5 Flash, Accessibility control, screen observation, action execution and verification. Enable LUNA Accessibility Service after installation and configure the Gemini API key locally."
+            --title "IMO Full Device Agent 2.2.0" \
+            --notes "IMO Android full-device agent with voice interaction, Gemini 2.5 Flash, Accessibility control, screenshot/UI observation, global actions, action execution, verification and recovery. Enable Accessibility after installation and configure the Gemini API key locally."
