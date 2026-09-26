@@ -131,7 +131,7 @@ public class MainActivity extends Activity {
                     if(feature==null){stateView.setText("⚠ Audio tidak valid.");b.setEnabled(true);return;}
                     samples[index[0]]=feature;index[0]++;
                     if(index[0]<3){stateView.setText("✓ Sampel "+index[0]+"/3 tersimpan. Siap merekam berikutnya.");b.setText("REKAM SAMPEL "+(index[0]+1));b.setEnabled(true);}
-                    else{try{voiceProfile.saveAverage(samples);stateView.setText("✓ Profil suara tersimpan terenkripsi.");setStatus("✓ Pendaftaran suara selesai. LUNA akan memeriksa kecocokan suara sebelum mendengar perintah.");b.setText("SELESAI");b.setOnClickListener(v->dialog.dismiss());}catch(Exception e){stateView.setText("⚠ Gagal menyimpan profil: "+safe(e));b.setEnabled(true);}}
+                    else{try{voiceProfile.saveAverage(samples);stateView.setText("✓ Profil suara tersimpan terenkripsi.");setStatus("✓ Pendaftaran suara selesai. LUNA akan memeriksa kecocokan suara sebelum mendengar perintah.");b.setText("SELESAI");b.setOnClickListener(doneView->dialog.dismiss());}catch(Exception e){stateView.setText("⚠ Gagal menyimpan profil: "+safe(e));b.setEnabled(true);}}
                 }));
             });
         });
