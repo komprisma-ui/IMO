@@ -97,7 +97,7 @@ public final class LunaBridgeService extends Service {
     private JSONObject observation(boolean includeScreenshot){
         JSONObject o=new JSONObject();try{
             o.put("package",access.currentPackage());o.put("tree",access.snapshot());o.put("nodes",access.snapshotNodes());o.put("accessibility",true);o.put("bridge_protocol",1);
-            o.put("timestamp",System.currentTimeMillis());
+            o.put("timestamp",System.currentTimeMillis());o.put("screen",access.screenInfo());o.put("device_sdk",Build.VERSION.SDK_INT);
             if(includeScreenshot&&Build.VERSION.SDK_INT>=30){
                 final java.util.concurrent.CountDownLatch latch=new java.util.concurrent.CountDownLatch(1);
                 final String[] shot=new String[1];
@@ -111,7 +111,7 @@ public final class LunaBridgeService extends Service {
     private void reply(String id,boolean ok,String message,JSONObject obs){
         JSONObject r=new JSONObject();try{r.put("type","result");r.put("id",id);r.put("ok",ok);r.put("message",message);if(obs!=null)r.put("observation",obs);send(r);}catch(Exception ignored){}
     }
-    private void send(JSONObject x){if(socket!=null)socket.send(x.toString());}
+    private void send(JSONObject x){if(socket!=null&&socket.send(x.toString()))return;}
     private void scheduleReconnect(){new Handler(Looper.getMainLooper()).postDelayed(this::connect,3000);}
     private void notifyStatus(String s){((NotificationManager)getSystemService(NOTIFICATION_SERVICE)).notify(8201,notification(s));}
     private Notification notification(String s){return new NotificationCompat.Builder(this,CHANNEL).setSmallIcon(android.R.drawable.ic_menu_manage).setContentTitle("IMO • Luna Bridge").setContentText(s).setOngoing(true).build();}
