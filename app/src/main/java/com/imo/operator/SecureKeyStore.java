@@ -36,5 +36,16 @@ public final class SecureKeyStore {
         Cipher c=Cipher.getInstance("AES/GCM/NoPadding"); c.init(Cipher.DECRYPT_MODE,key(),new GCMParameterSpec(128,Base64.decode(iv,Base64.NO_WRAP)));
         return new String(c.doFinal(Base64.decode(ct,Base64.NO_WRAP)), StandardCharsets.UTF_8);
     }
+    public void saveNamed(String name,String value)throws Exception{
+        Cipher c=Cipher.getInstance("AES/GCM/NoPadding"); c.init(Cipher.ENCRYPT_MODE,key());
+        byte[] ct=c.doFinal((value==null?"":value).getBytes(StandardCharsets.UTF_8));
+        prefs.edit().putString("named_"+name,Base64.encodeToString(ct,Base64.NO_WRAP)).putString("named_"+name+"_iv",Base64.encodeToString(c.getIV(),Base64.NO_WRAP)).apply();
+    }
+    public String loadNamed(String name)throws Exception{
+        String ct=prefs.getString("named_"+name,null),iv=prefs.getString("named_"+name+"_iv",null);if(ct==null||iv==null)return "";
+        Cipher c=Cipher.getInstance("AES/GCM/NoPadding");c.init(Cipher.DECRYPT_MODE,key(),new GCMParameterSpec(128,Base64.decode(iv,Base64.NO_WRAP)));
+        return new String(c.doFinal(Base64.decode(ct,Base64.NO_WRAP)),StandardCharsets.UTF_8);
+    }
+    public void clearNamed(String name){prefs.edit().remove("named_"+name).remove("named_"+name+"_iv").apply();}
     public void clear(){prefs.edit().clear().apply();}
 }
