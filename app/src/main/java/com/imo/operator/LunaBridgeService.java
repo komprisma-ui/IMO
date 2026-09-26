@@ -55,11 +55,11 @@ public final class LunaBridgeService extends Service {
             if("ping".equalsIgnoreCase(type)){JSONObject p=new JSONObject();p.put("type","pong");send(p);return;}
             access=LunaAccessibilityService.get();
             if(access==null){reply(cmd.optString("id",""),false,"Accessibility belum aktif",null);return;}
-            if("observe".equalsIgnoreCase(type)){reply(cmd.optString("id",""),true,"observation",observation());return;}
+            if("observe".equalsIgnoreCase(type)){reply(cmd.optString("id",""),true,"observation",observation(cmd.optBoolean("screenshot",false)));return;}
             JSONObject a=cmd.optJSONObject("action");if(a==null){reply(cmd.optString("id",""),false,"action kosong",null);return;}
             if(isSensitive(a)&&!cmd.optBoolean("confirmed",false)){reply(cmd.optString("id",""),false,"confirmation_required",observation());return;}
             boolean ok=execute(a);SystemClock.sleep(350);
-            reply(cmd.optString("id",""),ok,ok?"executed":"execution_failed",observation());
+            reply(cmd.optString("id",""),ok,ok?"executed":"execution_failed",observation(cmd.optBoolean("screenshot",false)));
         }catch(Exception e){JSONObject x=new JSONObject();try{x.put("type","error");x.put("error",e.getMessage()==null?"invalid_command":e.getMessage());send(x);}catch(Exception ignored){}}
     }
 
@@ -84,7 +84,7 @@ public final class LunaBridgeService extends Service {
         if(t.equals("POWER_DIALOG"))return access.globalPowerDialog();if(t.equals("LOCK_SCREEN"))return access.globalLockScreen();if(t.equals("SPLIT_SCREEN"))return access.globalSplitScreen();
         if(t.equals("OPEN_URL"))return d.openUrl(a.optString("value"));if(t.equals("OPEN_SETTINGS"))return d.openSettings(a.optString("value"));
         if(t.equals("SET_VOLUME"))return d.setVolume(a.optInt("level",50));if(t.equals("MUTE"))return d.mute();
-        if(t.equals("WAIT")){d.delay(a.optLong("delayMs",500));return true;}
+        if(t.equals("WAIT")){d.delay(Math.min(5000,Math.max(100,a.optLong("delayMs",500))));return true;}
         return false;
     }
 
@@ -94,10 +94,17 @@ public final class LunaBridgeService extends Service {
           v.matches(".*\\b(kirim|hapus|beli|bayar|transfer|setuju|otp|pin|password|kode verifikasi)\\b.*");
     }
 
-    private JSONObject observation(){
+    private JSONObject observation(boolean includeScreenshot){
         JSONObject o=new JSONObject();try{
             o.put("package",access.currentPackage());o.put("tree",access.snapshot());o.put("accessibility",true);
             o.put("timestamp",System.currentTimeMillis());
+            if(includeScreenshot&&Build.VERSION.SDK_INT>=30){
+                final java.util.concurrent.CountDownLatch latch=new java.util.concurrent.CountDownLatch(1);
+                final String[] shot=new String[1];
+                access.captureScreen(Runnable::run,b->{shot[0]=b;latch.countDown();});
+                latch.await(8,java.util.concurrent.TimeUnit.SECONDS);
+                if(shot[0]!=null)o.put("screenshot_jpeg_base64",shot[0]);
+            }
         }catch(Exception ignored){}return o;
     }
 
