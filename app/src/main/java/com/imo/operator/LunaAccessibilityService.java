@@ -96,6 +96,12 @@ public class LunaAccessibilityService extends AccessibilityService {
     public boolean globalPowerDialog(){return !stopped&&performGlobalAction(GLOBAL_ACTION_POWER_DIALOG);}
     public boolean globalLockScreen(){return !stopped&&Build.VERSION.SDK_INT>=28&&performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN);}
     public boolean globalSplitScreen(){return !stopped&&Build.VERSION.SDK_INT>=24&&performGlobalAction(GLOBAL_ACTION_TOGGLE_SPLIT_SCREEN);}
+    public boolean pressEnter(){
+        if(stopped||Build.VERSION.SDK_INT<30)return false;
+        AccessibilityNodeInfo root=getRootInActiveWindow(); if(root==null)return false;
+        AccessibilityNodeInfo target=findFocusedEditable(root); if(target==null)return false;
+        return target.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.getId());
+    }
     public boolean clearFocusedText(){
         if(stopped)return false;
         AccessibilityNodeInfo root=getRootInActiveWindow(); if(root==null)return false;
