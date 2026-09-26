@@ -10,10 +10,14 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: imo-android-build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     name: Build Android APK
-    runs-on: windows-2025
+    runs-on: ubuntu-22.04
     timeout-minutes: 30
 
     steps:
@@ -36,27 +40,31 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Install Android SDK packages
-        shell: pwsh
+        shell: bash
         run: |
-          sdkmanager --licenses | Out-Null
+          yes | sdkmanager --licenses >/dev/null || true
           sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Build release APK
-        shell: pwsh
+      - name: Validate Gradle project
+        shell: bash
         run: |
-          gradle --no-daemon assembleRelease --stacktrace
+          gradle --version
+          gradle --no-daemon tasks --all >/tmp/gradle-tasks.txt
+          grep -q "assembleRelease" /tmp/gradle-tasks.txt
+
+      - name: Build release APK
+        shell: bash
+        run: |
+          gradle --no-daemon assembleRelease --stacktrace --warning-mode all
 
       - name: Verify APK
-        shell: pwsh
+        shell: bash
         run: |
-          $apk = Get-ChildItem -Path "app/build/outputs/apk/release" -Filter "*.apk" -File | Select-Object -First 1
-          if ($null -eq $apk) { throw "Release APK not found" }
-          if ($apk.Length -le 0) { throw "Release APK is empty" }
-          & "$env:ANDROID_HOME/build-tools/35.0.0/apksigner.bat" verify --verbose $apk.FullName
-          if ($LASTEXITCODE -ne 0) { throw "APK signature verification failed" }
-          Write-Host "APK: $($apk.FullName)"
-          Write-Host "SIZE: $($apk.Length) bytes"
-          (Get-FileHash -Algorithm SHA256 $apk.FullName).Hash
+          apk="$(find app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' | head -n 1)"
+          test -n "$apk"
+          test -s "$apk"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$apk"
+          sha256sum "$apk"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -69,10 +77,7 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
-        shell: pwsh
+        shell: bash
         run: |
-          $tag = "imo-2.2.0-${{ github.run_number }}"
-          gh release create $tag "app/build/outputs/apk/release/app-release.apk" `
-            --repo "${{ github.repository }}" `
-            --title "IMO Full Device Agent 2.2.0" `
-            --notes "Validated IMO Android full-device agent build."
+          tag="imo-2.2.0-${{ github.run_number }}"
+          gh release create "$tag" "app/build/outputs/apk/release/app-release.apk"             --repo "${{ github.repository }}"             --title "IMO Full Device Agent 2.2.0"             --notes "Validated IMO Android full-device agent build."
