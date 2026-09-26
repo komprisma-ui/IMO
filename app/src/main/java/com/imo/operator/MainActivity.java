@@ -29,13 +29,13 @@ public class MainActivity extends Activity {
     private static final int TEXT=Color.rgb(244,247,255),MUTED=Color.rgb(155,176,204),PURPLE=Color.rgb(139,92,246),GREEN=Color.rgb(54,230,126),RED=Color.rgb(235,64,105);
     private EditText command; private TextView status,state;
     private Button mic,send,stop,key,access;
-    private TextToSpeech tts; private SpeechRecognizer recognizer; private SecureKeyStore keyStore;
+    private TextToSpeech tts; private SpeechRecognizer recognizer; private SecureKeyStore keyStore; private BridgeStore bridgeStore;
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private volatile boolean voiceMode=false,recognitionBusy=false,speaking=false,ttsReady=false,running=false;
     private volatile boolean ttsPending=false;
     private int recognitionRetries=0;
 
-    @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(Color.rgb(2,7,16));keyStore=new SecureKeyStore(this);buildUi();initTts();}
+    @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(Color.rgb(2,7,16));keyStore=new SecureKeyStore(this);bridgeStore=new BridgeStore(this);buildUi();initTts();}
 
     private void initTts(){
         tts=new TextToSpeech(this,result->{
@@ -73,7 +73,7 @@ public class MainActivity extends Activity {
         LinearLayout voice=card();voice.setOrientation(LinearLayout.VERTICAL);LinearLayout vr=row();Button tb=actionButton("⌨  TEKS",Color.TRANSPARENT,TEXT);vr.addView(tb,new LinearLayout.LayoutParams(dp(90),dp(48)));TextView wave=text(")))    ◉    (((",19,PURPLE,true);wave.setGravity(Gravity.CENTER);vr.addView(wave,new LinearLayout.LayoutParams(0,dp(48),1));mic=actionButton("MIC",Color.TRANSPARENT,TEXT);vr.addView(mic,new LinearLayout.LayoutParams(dp(105),dp(48)));voice.addView(vr);TextView vt=text("Ketuk MIC → bicara → LUNA menjawab → mendengar lagi",11,TEXT,true);vt.setGravity(Gravity.CENTER);vt.setPadding(0,dp(5),0,0);voice.addView(vt);root.addView(voice);
         LinearLayout cr=new LinearLayout(this);cr.setGravity(Gravity.CENTER_VERTICAL);command=new EditText(this);command.setHint("Ketik pertanyaan atau perintah…");command.setHintTextColor(Color.rgb(105,128,159));command.setTextColor(TEXT);command.setTextSize(14);command.setSingleLine(true);command.setPadding(dp(16),0,dp(10),0);command.setBackground(round(CARD2,28));cr.addView(command,new LinearLayout.LayoutParams(0,dp(54),1));send=actionButton("➤",PURPLE,Color.WHITE);LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(dp(58),dp(54));sp.setMargins(dp(8),0,0,0);cr.addView(send,sp);root.addView(cr);
         LinearLayout mr=new LinearLayout(this);mr.setPadding(0,dp(12),0,0);mr.setGravity(Gravity.CENTER);Button run=actionButton("▶  JALANKAN",PURPLE,Color.WHITE);mr.addView(run,new LinearLayout.LayoutParams(0,dp(54),1));stop=actionButton("■  STOP",RED,Color.WHITE);LinearLayout.LayoutParams stp=new LinearLayout.LayoutParams(0,dp(54),.45f);stp.setMargins(dp(7),0,0,0);mr.addView(stop,stp);root.addView(mr);
-        LinearLayout tools=new LinearLayout(this);tools.setPadding(0,dp(10),0,0);access=outlineButton("♿  ACCESSIBILITY");key=outlineButton("⚿  GEMINI API KEY");tools.addView(access,new LinearLayout.LayoutParams(0,dp(50),1));LinearLayout kk=new LinearLayout(this);kk.setPadding(dp(8),0,0,0);kk.addView(key,new LinearLayout.LayoutParams(-1,dp(50)));tools.addView(kk,new LinearLayout.LayoutParams(0,dp(50),1));root.addView(tools);state=text("",10,MUTED,false);root.addView(state);TextView foot=text("LUNA  •  Dengar → Pahami → Amati → Bertindak → Verifikasi\nSTOP menghentikan operator dan mode suara.",10,MUTED,false);foot.setPadding(dp(4),dp(12),dp(4),0);root.addView(foot);setContentView(outer);
+        LinearLayout tools=new LinearLayout(this);tools.setPadding(0,dp(10),0,0);access=outlineButton("♿  ACCESSIBILITY");key=outlineButton("⚿  GEMINI API KEY");tools.addView(access,new LinearLayout.LayoutParams(0,dp(50),1));LinearLayout kk=new LinearLayout(this);kk.setPadding(dp(8),0,0,0);kk.addView(key,new LinearLayout.LayoutParams(-1,dp(50)));tools.addView(kk,new LinearLayout.LayoutParams(0,dp(50),1));root.addView(tools); Button bridge=outlineButton("↔  LUNA BRIDGE"); bridge.setOnClickListener(v->showBridgeDialog()); LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(-1,dp(50)); bp.setMargins(0,dp(8),0,0); root.addView(bridge,bp); state=text("",10,MUTED,false);root.addView(state);TextView foot=text("LUNA  •  Dengar → Pahami → Amati → Bertindak → Verifikasi\nSTOP menghentikan operator dan mode suara.",10,MUTED,false);foot.setPadding(dp(4),dp(12),dp(4),0);root.addView(foot);setContentView(outer);
         send.setOnClickListener(v->runCommand(command.getText().toString()));run.setOnClickListener(v->runCommand(command.getText().toString()));stop.setOnClickListener(v->stopAll());access.setOnClickListener(v->startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));key.setOnClickListener(v->showKeyDialog());mic.setOnClickListener(v->toggleVoice());tb.setOnClickListener(v->{command.requestFocus();command.setSelection(command.length());});refreshState();
     }
 
@@ -88,6 +88,17 @@ public class MainActivity extends Activity {
     private GradientDrawable stroke(int c,int l,int r,int w){GradientDrawable g=round(c,r);g.setStroke(w,l);return g;}
     private int dp(int n){return Math.round(n*getResources().getDisplayMetrics().density);}
     private void refreshState(){if(state!=null)state.setText(LunaAccessibilityService.get()!=null?(voiceMode?"● Accessibility aktif • MODE SUARA":"● Accessibility aktif"):"● Accessibility belum aktif");}
+
+    private void showBridgeDialog(){
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(6),0,dp(6),0);
+        EditText url=new EditText(this);url.setHint("wss://server-anda/imo");url.setSingleLine(true);url.setText(bridgeStore.url());url.setTextColor(TEXT);url.setHintTextColor(MUTED);
+        EditText token=new EditText(this);token.setHint("Bridge token");token.setSingleLine(true);token.setTextColor(TEXT);token.setHintTextColor(MUTED);token.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        box.addView(url);box.addView(token);
+        new AlertDialog.Builder(this).setTitle("LUNA ↔ IMO Bridge").setMessage("Bridge memakai WSS + Bearer token. Server harus mengautentikasi perangkat sebelum menerima perintah.")
+          .setView(box).setPositiveButton("Simpan & Hubungkan",(d,w)->{
+            try{String u=url.getText().toString().trim(),t=token.getText().toString().trim();if(u.isEmpty()||t.isEmpty()){setStatus("⚠ URL dan token bridge wajib diisi.");return;}bridgeStore.save(u,t);Intent i=new Intent(this,LunaBridgeService.class);if(Build.VERSION.SDK_INT>=26)startForegroundService(i);else startService(i);setStatus("↔ Bridge IMO sedang menghubungkan…");}catch(Exception e){setStatus("⚠ Gagal menyimpan bridge: "+safe(e));}
+          }).setNegativeButton("Hapus & Putus",(d,w)->{bridgeStore.clear();stopService(new Intent(this,LunaBridgeService.class));setStatus("Bridge diputus.");}).setNeutralButton("Batal",null).show();
+    }
 
     private void showKeyDialog(){EditText e=new EditText(this);e.setHint("AIza…");e.setTextColor(TEXT);e.setHintTextColor(MUTED);e.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);try{String old=keyStore.load();if(old!=null&&!old.isEmpty())e.setText(old);}catch(Exception ignored){}new AlertDialog.Builder(this).setTitle("Gemini API Key").setMessage("Masukkan API key Gemini dari Google AI Studio. Key disimpan terenkripsi di perangkat.").setView(e).setPositiveButton("Simpan",(d,w)->{try{String k=e.getText().toString().trim();if(k.isEmpty()){setStatus("⚠ API key kosong.");return;}keyStore.save(k);setStatus("✓ Gemini API key tersimpan. Coba bicara: Halo LUNA.");}catch(Exception ex){setStatus("Gagal menyimpan key: "+ex.getMessage());}}).setNegativeButton("Hapus",(d,w)->{try{keyStore.clear();}catch(Exception ignored){}setStatus("Gemini API key dihapus.");}).setNeutralButton("Batal",null).show();}
 
