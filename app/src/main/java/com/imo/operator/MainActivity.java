@@ -25,6 +25,7 @@ import java.util.concurrent.Executors;
 /** LUNA control console. Voice is a continuous listen -> understand -> act -> speak loop. */
 public class MainActivity extends Activity {
     private static final int REQ_MIC=4101, REQ_NOTIFICATIONS=4102;
+    private int micRequestMode=0; // 1=enrollment, 2=voice mode
     private static final int BG=Color.rgb(3,10,23),CARD=Color.rgb(8,24,47),CARD2=Color.rgb(12,33,61),LINE=Color.rgb(35,82,130);
     private static final int TEXT=Color.rgb(244,247,255),MUTED=Color.rgb(155,176,204),PURPLE=Color.rgb(139,92,246),GREEN=Color.rgb(54,230,126),RED=Color.rgb(235,64,105);
     private EditText command; private TextView status,state;
@@ -108,8 +109,8 @@ public class MainActivity extends Activity {
 
     private void showVoiceEnrollment(){
         if(Build.VERSION.SDK_INT>=23&&ContextCompat.checkSelfPermission(this,Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){
-            ActivityCompat.requestPermissions(this,new String[]{Manifest.permission.RECORD_AUDIO},REQ_MIC);
-            setStatus("Izinkan mikrofon lalu buka DAFTAR SUARA PEMILIK lagi.");
+            micRequestMode=1; ActivityCompat.requestPermissions(this,new String[]{Manifest.permission.RECORD_AUDIO},REQ_MIC);
+            setStatus("Izinkan mikrofon. Setelah diizinkan, pendaftaran suara akan dibuka otomatis.");
             return;
         }
         LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(8),0,dp(8),0);
@@ -170,7 +171,7 @@ public class MainActivity extends Activity {
 
     private void toggleVoice(){
         if(voiceMode){stopVoiceOnly();return;}
-        if(Build.VERSION.SDK_INT>=23&&ContextCompat.checkSelfPermission(this,Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){ActivityCompat.requestPermissions(this,new String[]{Manifest.permission.RECORD_AUDIO},REQ_MIC);return;}
+        if(Build.VERSION.SDK_INT>=23&&ContextCompat.checkSelfPermission(this,Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){micRequestMode=2; ActivityCompat.requestPermissions(this,new String[]{Manifest.permission.RECORD_AUDIO},REQ_MIC);return;}
         voiceMode=true;recognitionRetries=0;mic.setText("STOP MIC");refreshState();setStatus("🎙 Menyiapkan mikrofon…");postListen(250);
     }
     private void stopVoiceOnly(){voiceMode=false;recognitionBusy=false;recognitionRetries=0;ttsPending=false;if(recognizer!=null){try{recognizer.cancel();}catch(Exception ignored){}}if(tts!=null){try{tts.stop();}catch(Exception ignored){}}speaking=false;mic.setText("MIC");setStatus("Mode suara dihentikan.");refreshState();}
@@ -195,7 +196,7 @@ public class MainActivity extends Activity {
     }
     private void startRecognition(){
         if(!voiceMode||recognitionBusy||speaking)return;
-        if(Build.VERSION.SDK_INT>=23&&ContextCompat.checkSelfPermission(this,Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){ActivityCompat.requestPermissions(this,new String[]{Manifest.permission.RECORD_AUDIO},REQ_MIC);return;}
+        if(Build.VERSION.SDK_INT>=23&&ContextCompat.checkSelfPermission(this,Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){micRequestMode=2; ActivityCompat.requestPermissions(this,new String[]{Manifest.permission.RECORD_AUDIO},REQ_MIC);return;}
         if(voiceProfile.hasProfile()){verifyVoiceThenStart();return;}
         startRecognitionInternal();
     }
@@ -233,7 +234,7 @@ public class MainActivity extends Activity {
     private void setStatus(String s){runUi(()->{if(status!=null)status.setText(s);});}
     private void runUi(Runnable r){if(Looper.myLooper()==Looper.getMainLooper())r.run();else runOnUiThread(r);}
 
-    @Override public void onRequestPermissionsResult(int requestCode,String[] permissions,int[] grants){super.onRequestPermissionsResult(requestCode,permissions,grants);if(requestCode==REQ_MIC){if(grants.length>0&&grants[0]==PackageManager.PERMISSION_GRANTED){voiceMode=true;mic.setText("STOP MIC");refreshState();postListen(250);}else{voiceMode=false;setStatus("⚠ Izin mikrofon diperlukan agar LUNA dapat mendengar.");refreshState();}}}
+    @Override public void onRequestPermissionsResult(int requestCode,String[] permissions,int[] grants){super.onRequestPermissionsResult(requestCode,permissions,grants);if(requestCode==REQ_MIC){boolean ok=grants.length>0&&grants[0]==PackageManager.PERMISSION_GRANTED;int mode=micRequestMode;micRequestMode=0;if(!ok){voiceMode=false;setStatus("⚠ Izin mikrofon diperlukan agar LUNA dapat mendengar.");refreshState();return;}if(mode==1){showVoiceEnrollment();}else{voiceMode=true;mic.setText("STOP MIC");refreshState();postListen(250);}}}
     @Override protected void onResume(){super.onResume();new Handler(Looper.getMainLooper()).postDelayed(this::refreshState,300);}
     @Override protected void onDestroy(){voiceMode=false;destroyRecognizer();if(tts!=null){try{tts.stop();tts.shutdown();}catch(Exception ignored){}}worker.shutdownNow();super.onDestroy();}
 }
