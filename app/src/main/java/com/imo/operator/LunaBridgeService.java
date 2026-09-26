@@ -96,7 +96,7 @@ public final class LunaBridgeService extends Service {
 
     private JSONObject observation(boolean includeScreenshot){
         JSONObject o=new JSONObject();try{
-            o.put("package",access.currentPackage());o.put("tree",access.snapshot());o.put("accessibility",true);
+            o.put("package",access.currentPackage());o.put("tree",access.snapshot());o.put("nodes",access.snapshotNodes());o.put("accessibility",true);o.put("bridge_protocol",1);
             o.put("timestamp",System.currentTimeMillis());
             if(includeScreenshot&&Build.VERSION.SDK_INT>=30){
                 final java.util.concurrent.CountDownLatch latch=new java.util.concurrent.CountDownLatch(1);
