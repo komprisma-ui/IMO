@@ -29,13 +29,13 @@ public class MainActivity extends Activity {
     private static final int TEXT=Color.rgb(244,247,255),MUTED=Color.rgb(155,176,204),PURPLE=Color.rgb(139,92,246),GREEN=Color.rgb(54,230,126),RED=Color.rgb(235,64,105);
     private EditText command; private TextView status,state;
     private Button mic,send,stop,key,access;
-    private TextToSpeech tts; private SpeechRecognizer recognizer; private SecureKeyStore keyStore; private BridgeStore bridgeStore;
+    private TextToSpeech tts; private SpeechRecognizer recognizer; private SecureKeyStore keyStore; private BridgeStore bridgeStore; private VoiceProfileManager voiceProfile; private volatile boolean voiceGateBusy=false;
     private final ExecutorService worker=Executors.newSingleThreadExecutor();
     private volatile boolean voiceMode=false,recognitionBusy=false,speaking=false,ttsReady=false,running=false;
     private volatile boolean ttsPending=false;
     private int recognitionRetries=0;
 
-    @Override public void onCreate(Bundle b){super.onCreate(b);requestNotificationPermissionIfNeeded();getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(Color.rgb(2,7,16));keyStore=new SecureKeyStore(this);bridgeStore=new BridgeStore(this);buildUi();initTts();}
+    @Override public void onCreate(Bundle b){super.onCreate(b);requestNotificationPermissionIfNeeded();getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(Color.rgb(2,7,16));keyStore=new SecureKeyStore(this);bridgeStore=new BridgeStore(this);voiceProfile=new VoiceProfileManager(this,keyStore);buildUi();initTts();}
 
     private void requestNotificationPermissionIfNeeded(){
         if(Build.VERSION.SDK_INT>=33&&ContextCompat.checkSelfPermission(this,Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED) ActivityCompat.requestPermissions(this,new String[]{Manifest.permission.POST_NOTIFICATIONS},REQ_NOTIFICATIONS);
@@ -77,8 +77,8 @@ public class MainActivity extends Activity {
         LinearLayout voice=card();voice.setOrientation(LinearLayout.VERTICAL);LinearLayout vr=row();Button tb=actionButton("⌨  TEKS",Color.TRANSPARENT,TEXT);vr.addView(tb,new LinearLayout.LayoutParams(dp(90),dp(48)));TextView wave=text(")))    ◉    (((",19,PURPLE,true);wave.setGravity(Gravity.CENTER);vr.addView(wave,new LinearLayout.LayoutParams(0,dp(48),1));mic=actionButton("MIC",Color.TRANSPARENT,TEXT);vr.addView(mic,new LinearLayout.LayoutParams(dp(105),dp(48)));voice.addView(vr);TextView vt=text("Ketuk MIC → bicara → LUNA menjawab → mendengar lagi",11,TEXT,true);vt.setGravity(Gravity.CENTER);vt.setPadding(0,dp(5),0,0);voice.addView(vt);root.addView(voice);
         LinearLayout cr=new LinearLayout(this);cr.setGravity(Gravity.CENTER_VERTICAL);command=new EditText(this);command.setHint("Ketik pertanyaan atau perintah…");command.setHintTextColor(Color.rgb(105,128,159));command.setTextColor(TEXT);command.setTextSize(14);command.setSingleLine(true);command.setPadding(dp(16),0,dp(10),0);command.setBackground(round(CARD2,28));cr.addView(command,new LinearLayout.LayoutParams(0,dp(54),1));send=actionButton("➤",PURPLE,Color.WHITE);LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(dp(58),dp(54));sp.setMargins(dp(8),0,0,0);cr.addView(send,sp);root.addView(cr);
         LinearLayout mr=new LinearLayout(this);mr.setPadding(0,dp(12),0,0);mr.setGravity(Gravity.CENTER);Button run=actionButton("▶  JALANKAN",PURPLE,Color.WHITE);mr.addView(run,new LinearLayout.LayoutParams(0,dp(54),1));stop=actionButton("■  STOP",RED,Color.WHITE);LinearLayout.LayoutParams stp=new LinearLayout.LayoutParams(0,dp(54),.45f);stp.setMargins(dp(7),0,0,0);mr.addView(stop,stp);root.addView(mr);
-        LinearLayout tools=new LinearLayout(this);tools.setPadding(0,dp(10),0,0);access=outlineButton("♿  ACCESSIBILITY");key=outlineButton("⚿  GEMINI API KEY");tools.addView(access,new LinearLayout.LayoutParams(0,dp(50),1));LinearLayout kk=new LinearLayout(this);kk.setPadding(dp(8),0,0,0);kk.addView(key,new LinearLayout.LayoutParams(-1,dp(50)));tools.addView(kk,new LinearLayout.LayoutParams(0,dp(50),1));root.addView(tools); Button bridge=outlineButton("↔  LUNA BRIDGE"); bridge.setOnClickListener(v->showBridgeDialog()); LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(-1,dp(50)); bp.setMargins(0,dp(8),0,0); root.addView(bridge,bp); state=text("",10,MUTED,false);root.addView(state);TextView foot=text("LUNA  •  Dengar → Pahami → Amati → Bertindak → Verifikasi\nSTOP menghentikan operator dan mode suara.",10,MUTED,false);foot.setPadding(dp(4),dp(12),dp(4),0);root.addView(foot);setContentView(outer);
-        send.setOnClickListener(v->runCommand(command.getText().toString()));run.setOnClickListener(v->runCommand(command.getText().toString()));stop.setOnClickListener(v->stopAll());access.setOnClickListener(v->startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));key.setOnClickListener(v->showKeyDialog());mic.setOnClickListener(v->toggleVoice());tb.setOnClickListener(v->{command.requestFocus();command.setSelection(command.length());});refreshState();
+        LinearLayout tools=new LinearLayout(this);tools.setPadding(0,dp(10),0,0);access=outlineButton("♿  ACCESSIBILITY");key=outlineButton("⚿  GEMINI API KEY");tools.addView(access,new LinearLayout.LayoutParams(0,dp(50),1));LinearLayout kk=new LinearLayout(this);kk.setPadding(dp(8),0,0,0);kk.addView(key,new LinearLayout.LayoutParams(-1,dp(50)));tools.addView(kk,new LinearLayout.LayoutParams(0,dp(50),1));root.addView(tools); Button enroll=outlineButton("🎙  DAFTAR SUARA PEMILIK"); LinearLayout.LayoutParams ep=new LinearLayout.LayoutParams(-1,dp(50)); ep.setMargins(0,dp(8),0,0); root.addView(enroll,ep); Button bridge=outlineButton("↔  LUNA BRIDGE"); bridge.setOnClickListener(v->showBridgeDialog()); LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(-1,dp(50)); bp.setMargins(0,dp(8),0,0); root.addView(bridge,bp); state=text("",10,MUTED,false);root.addView(state);TextView foot=text("LUNA  •  Dengar → Pahami → Amati → Bertindak → Verifikasi\nSTOP menghentikan operator dan mode suara.",10,MUTED,false);foot.setPadding(dp(4),dp(12),dp(4),0);root.addView(foot);setContentView(outer);
+        send.setOnClickListener(v->runCommand(command.getText().toString()));run.setOnClickListener(v->runCommand(command.getText().toString()));stop.setOnClickListener(v->stopAll());access.setOnClickListener(v->startActivity(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));key.setOnClickListener(v->showKeyDialog());enroll.setOnClickListener(v->showVoiceEnrollment());mic.setOnClickListener(v->toggleVoice());tb.setOnClickListener(v->{command.requestFocus();command.setSelection(command.length());});refreshState();
     }
 
     private Button quickButton(String label,String cmd){Button b=actionButton(label,Color.rgb(9,31,57),TEXT);b.setTextSize(9);b.setOnClickListener(v->{command.setText(cmd);runCommand(cmd);});b.setLayoutParams(new LinearLayout.LayoutParams(0,dp(42),1));return b;}
@@ -105,6 +105,68 @@ public class MainActivity extends Activity {
     }
 
     private void showKeyDialog(){EditText e=new EditText(this);e.setHint("AIza…");e.setTextColor(TEXT);e.setHintTextColor(MUTED);e.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);try{String old=keyStore.load();if(old!=null&&!old.isEmpty())e.setText(old);}catch(Exception ignored){}new AlertDialog.Builder(this).setTitle("Gemini API Key").setMessage("Masukkan API key Gemini dari Google AI Studio. Key disimpan terenkripsi di perangkat.").setView(e).setPositiveButton("Simpan",(d,w)->{try{String k=e.getText().toString().trim();if(k.isEmpty()){setStatus("⚠ API key kosong.");return;}keyStore.save(k);setStatus("✓ Gemini API key tersimpan. Coba bicara: Halo LUNA.");}catch(Exception ex){setStatus("Gagal menyimpan key: "+ex.getMessage());}}).setNegativeButton("Hapus",(d,w)->{try{keyStore.clear();}catch(Exception ignored){}setStatus("Gemini API key dihapus.");}).setNeutralButton("Batal",null).show();}
+
+    private void showVoiceEnrollment(){
+        if(Build.VERSION.SDK_INT>=23&&ContextCompat.checkSelfPermission(this,Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){
+            ActivityCompat.requestPermissions(this,new String[]{Manifest.permission.RECORD_AUDIO},REQ_MIC);
+            setStatus("Izinkan mikrofon lalu buka DAFTAR SUARA PEMILIK lagi.");
+            return;
+        }
+        LinearLayout box=new LinearLayout(this);box.setOrientation(LinearLayout.VERTICAL);box.setPadding(dp(8),0,dp(8),0);
+        TextView info=text("Rekam 3 sampel suara dalam ruangan tenang. Ucapkan kalimat yang sama dengan suara normal. Profil disimpan terenkripsi di perangkat.",12,TEXT,false);
+        box.addView(info);
+        TextView stateView=text("Sampel 0/3 siap.",12,MUTED,true);stateView.setPadding(0,dp(12),0,0);box.addView(stateView);
+        AlertDialog dialog=new AlertDialog.Builder(this).setTitle("Pendaftaran Suara Pemilik").setView(box)
+                .setNegativeButton("Tutup",null).setPositiveButton("REKAM SAMPel 1",null).create();
+        final float[][] samples=new float[3][];
+        final int[] index={0};
+        dialog.setOnShowListener(x->{
+            Button b=dialog.getButton(AlertDialog.BUTTON_POSITIVE);
+            b.setOnClickListener(v->{
+                if(index[0]>=3)return;
+                b.setEnabled(false);int n=index[0]+1;stateView.setText("🎙 Merekam sampel "+n+"/3… ucapkan: "Halo LUNA, ini suara saya."");setStatus("🎙 Pendaftaran suara: sampel "+n+"/3…");
+                voiceProfile.capture(1800,(feature,error)->runUi(()->{
+                    if(error!=null){stateView.setText("⚠ "+error);setStatus("⚠ Gagal merekam sampel "+n+": "+error);b.setEnabled(true);return;}
+                    if(feature==null){stateView.setText("⚠ Audio tidak valid.");b.setEnabled(true);return;}
+                    samples[index[0]]=feature;index[0]++;
+                    if(index[0]<3){stateView.setText("✓ Sampel "+index[0]+"/3 tersimpan. Siap merekam berikutnya.");b.setText("REKAM SAMPEL "+(index[0]+1));b.setEnabled(true);}
+                    else{try{voiceProfile.saveAverage(samples);stateView.setText("✓ Profil suara tersimpan terenkripsi.");setStatus("✓ Pendaftaran suara selesai. LUNA akan memeriksa kecocokan suara sebelum mendengar perintah.");b.setText("SELESAI");b.setOnClickListener(v->dialog.dismiss());}catch(Exception e){stateView.setText("⚠ Gagal menyimpan profil: "+safe(e));b.setEnabled(true);}}
+                }));
+            });
+        });
+        dialog.show();
+    }
+
+    private void verifyVoiceThenStart(){
+        if(!voiceMode||voiceGateBusy)return;
+        voiceGateBusy=true;setStatus("🔐 Memeriksa kecocokan suara pemilik…");
+        voiceProfile.capture(850,(feature,error)->runUi(()->{
+            voiceGateBusy=false;
+            if(!voiceMode)return;
+            if(error!=null){setStatus("⚠ Verifikasi suara gagal: "+error);scheduleRetry(1200);return;}
+            float score=voiceProfile.similarity(feature);
+            if(score<0.78f){setStatus("🔒 Suara tidak cocok dengan profil pemilik. Saya tidak menjalankan perintah.");scheduleRetry(1200);return;}
+            setStatus("✓ Suara pemilik terverifikasi. Mendengarkan perintah…");
+            startRecognitionInternal();
+        }));
+    }
+
+    private void startRecognitionInternal(){
+        if(!voiceMode||recognitionBusy||speaking)return;
+        createRecognizer();if(recognizer==null){scheduleRetry(1500);return;}
+        try{
+            Intent i=new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+            i.putExtra(RecognizerIntent.EXTRA_LANGUAGE,"id-ID");i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE,"id-ID");
+            i.putExtra(RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE,"id-ID");
+            i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+            i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS,true);i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS,5);
+            i.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE,false);
+            i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,2300);
+            i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS,1500);
+            i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS,700);
+            setStatus("🎙 Mendengarkan… silakan bicara sekarang");recognitionBusy=true;recognizer.startListening(i);
+        }catch(Throwable t){recognitionBusy=false;destroyRecognizer();setStatus("⚠ Mikrofon gagal dimulai: "+safe(t));scheduleRetry(1200);}
+    }
 
     private void toggleVoice(){
         if(voiceMode){stopVoiceOnly();return;}
@@ -134,18 +196,8 @@ public class MainActivity extends Activity {
     private void startRecognition(){
         if(!voiceMode||recognitionBusy||speaking)return;
         if(Build.VERSION.SDK_INT>=23&&ContextCompat.checkSelfPermission(this,Manifest.permission.RECORD_AUDIO)!=PackageManager.PERMISSION_GRANTED){ActivityCompat.requestPermissions(this,new String[]{Manifest.permission.RECORD_AUDIO},REQ_MIC);return;}
-        createRecognizer();if(recognizer==null){scheduleRetry(1500);return;}
-        try{
-            Intent i=new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
-            i.putExtra(RecognizerIntent.EXTRA_LANGUAGE,"id-ID");i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE,"id-ID");i.putExtra(RecognizerIntent.EXTRA_ONLY_RETURN_LANGUAGE_PREFERENCE,"id-ID");
-            i.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL,RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
-            i.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS,true);i.putExtra(RecognizerIntent.EXTRA_MAX_RESULTS,5);
-            i.putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE,false);
-            i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS,2300);
-            i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS,1500);
-            i.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS,700);
-            setStatus("🎙 Mendengarkan… silakan bicara sekarang");recognitionBusy=true;recognizer.startListening(i);
-        }catch(Throwable t){recognitionBusy=false;destroyRecognizer();setStatus("⚠ Mikrofon gagal dimulai: "+safe(t));scheduleRetry(1200);}
+        if(voiceProfile.hasProfile()){verifyVoiceThenStart();return;}
+        startRecognitionInternal();
     }
     private void handleRecognitionError(int e){
         String msg=errorText(e);
