@@ -1,0 +1,15 @@
+name: IMO Runner Probe
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    steps:
+      - name: Probe runner
+        run: |
+          echo "runner=$RUNNER_NAME"
+          uname -a
+          echo "GitHub Actions runner is alive"
