@@ -24,7 +24,7 @@ import java.util.concurrent.Executors;
 
 /** LUNA control console. Voice is a continuous listen -> understand -> act -> speak loop. */
 public class MainActivity extends Activity {
-    private static final int REQ_MIC=4101;
+    private static final int REQ_MIC=4101, REQ_NOTIFICATIONS=4102;
     private static final int BG=Color.rgb(3,10,23),CARD=Color.rgb(8,24,47),CARD2=Color.rgb(12,33,61),LINE=Color.rgb(35,82,130);
     private static final int TEXT=Color.rgb(244,247,255),MUTED=Color.rgb(155,176,204),PURPLE=Color.rgb(139,92,246),GREEN=Color.rgb(54,230,126),RED=Color.rgb(235,64,105);
     private EditText command; private TextView status,state;
@@ -35,9 +35,9 @@ public class MainActivity extends Activity {
     private volatile boolean ttsPending=false;
     private int recognitionRetries=0;
 
-    @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(Color.rgb(2,7,16));keyStore=new SecureKeyStore(this);bridgeStore=new BridgeStore(this);buildUi();initTts();}
+    @Override public void onCreate(Bundle b){super.onCreate(b);requestNotificationPermissionIfNeeded();getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(Color.rgb(2,7,16));keyStore=new SecureKeyStore(this);bridgeStore=new BridgeStore(this);buildUi();initTts();}
 
-    private void initTts(){
+    private void requestNotificationPermissionIfNeeded(){\n        if(Build.VERSION.SDK_INT>=33&&ContextCompat.checkSelfPermission(this,Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED) ActivityCompat.requestPermissions(this,new String[]{Manifest.permission.POST_NOTIFICATIONS},REQ_NOTIFICATIONS);\n    }\n\n    private void initTts(){
         tts=new TextToSpeech(this,result->{
             ttsReady=result==TextToSpeech.SUCCESS;
             if(!ttsReady){setStatus("⚠ Mesin suara LUNA belum siap. Aktifkan Text-to-Speech Android.");return;}
