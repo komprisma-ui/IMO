@@ -94,7 +94,9 @@ public final class LunaBridgeService extends Service {
           v.matches(".*\\b(kirim|hapus|beli|bayar|transfer|setuju|otp|pin|password|kode verifikasi)\\b.*");
     }
 
-    private JSONObject observation(){ return observation(false); }\n\n    private JSONObject observation(boolean includeScreenshot){
+    private JSONObject observation(){ return observation(false); }
+
+    private JSONObject observation(boolean includeScreenshot){
         JSONObject o=new JSONObject();try{
             o.put("package",access.currentPackage());o.put("tree",access.snapshot());o.put("nodes",access.snapshotNodes());o.put("accessibility",true);o.put("bridge_protocol",1);
             o.put("timestamp",System.currentTimeMillis());o.put("screen",access.screenInfo());o.put("device_sdk",Build.VERSION.SDK_INT);
