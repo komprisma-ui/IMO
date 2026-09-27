@@ -13,3 +13,6 @@ Never commit an API key. For production/distribution, route OpenAI traffic throu
 
 ## Bridge validation
 Bidirectional WSS bridge is included in IMO 2.2.0.
+
+
+<!-- CI trigger: final APK build verification -->
