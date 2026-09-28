@@ -13,7 +13,7 @@ import java.util.concurrent.TimeUnit;
 /** Reliable Gemini REST client for LUNA. */
 public final class GeminiClient {
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
-    private static final String MODEL = "gemini-2.5-flash";
+    private static final String MODEL = "gemini-3.8-flash";
     private static final String ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/" + MODEL + ":generateContent";
     private final OkHttpClient http = new OkHttpClient.Builder().connectTimeout(20, TimeUnit.SECONDS).writeTimeout(30, TimeUnit.SECONDS).readTimeout(120, TimeUnit.SECONDS).callTimeout(150, TimeUnit.SECONDS).retryOnConnectionFailure(true).build();
     private final String apiKey;
@@ -42,7 +42,7 @@ public final class GeminiClient {
         parts.put(new JSONObject().put("text", prompt.toString()));
         if (imageBase64Jpeg != null && !imageBase64Jpeg.isEmpty()) parts.put(new JSONObject().put("inline_data", new JSONObject().put("mime_type", "image/jpeg").put("data", imageBase64Jpeg)));
         content.put("parts", parts); contents.put(content); root.put("contents", contents);
-        JSONObject generationConfig = new JSONObject().put("temperature", 0.15).put("responseMimeType", "application/json").put("responseSchema", responseSchema());
+        JSONObject generationConfig = new JSONObject().put("responseMimeType", "application/json").put("responseSchema", responseSchema());
         root.put("generationConfig", generationConfig);
         String raw = callWithRetry(root); String text = extractText(new JSONObject(raw));
         if (text == null || text.trim().isEmpty()) throw new IOException("Gemini tidak mengembalikan respons.");
@@ -68,11 +68,7 @@ public final class GeminiClient {
     }
     private boolean retryable(int code) { return code == 408 || code == 429 || code >= 500; }
 
-    /**
-     * Gemini structured-output schemas accept the OpenAPI subset used here.
-     * Do not send additionalProperties: Gemini rejects that keyword in nested
-     * responseSchema items (400 Invalid JSON payload).
-     */
+    /** Gemini structured-output schema using the supported OpenAPI subset. */
     private JSONObject responseSchema() throws Exception {
         JSONObject action = new JSONObject();
         JSONObject props = new JSONObject();
