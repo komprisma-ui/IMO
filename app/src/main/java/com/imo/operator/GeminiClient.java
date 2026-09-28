@@ -68,15 +68,33 @@ public final class GeminiClient {
     }
     private boolean retryable(int code) { return code == 408 || code == 429 || code >= 500; }
 
+    /**
+     * Gemini structured-output schemas accept the OpenAPI subset used here.
+     * Do not send additionalProperties: Gemini rejects that keyword in nested
+     * responseSchema items (400 Invalid JSON payload).
+     */
     private JSONObject responseSchema() throws Exception {
         JSONObject action = new JSONObject();
         JSONObject props = new JSONObject();
         props.put("type", new JSONObject().put("type", "string").put("enum", new JSONArray(new String[]{"OPEN_APP","CLICK_TEXT","CLICK_DESC","CLICK_ID","CLICK_POINT","LONG_CLICK_TEXT","LONG_CLICK_DESC","LONG_CLICK_ID","LONG_CLICK_POINT","TYPE","SCROLL","SWIPE","BACK","HOME","RECENTS","NOTIFICATIONS","QUICK_SETTINGS","POWER_DIALOG","LOCK_SCREEN","SPLIT_SCREEN","CLEAR_TEXT","PRESS_ENTER","LIST_APPS","WAIT","OPEN_URL","OPEN_SETTINGS","SET_VOLUME","MUTE"})));
-        props.put("value", new JSONObject().put("type", "string")); props.put("package", new JSONObject().put("type", "string")); props.put("label", new JSONObject().put("type", "string")); props.put("direction", new JSONObject().put("type", "string")); props.put("delayMs", new JSONObject().put("type", "integer")); props.put("distance", new JSONObject().put("type", "integer")); props.put("durationMs", new JSONObject().put("type", "integer")); props.put("x", new JSONObject().put("type", "number")); props.put("y", new JSONObject().put("type", "number")); props.put("level", new JSONObject().put("type", "integer"));
-        action.put("type", "object").put("properties", props).put("required", new JSONArray(new String[]{"type"})).put("additionalProperties", false);
+        props.put("value", new JSONObject().put("type", "string"));
+        props.put("package", new JSONObject().put("type", "string"));
+        props.put("label", new JSONObject().put("type", "string"));
+        props.put("direction", new JSONObject().put("type", "string"));
+        props.put("delayMs", new JSONObject().put("type", "integer"));
+        props.put("distance", new JSONObject().put("type", "integer"));
+        props.put("durationMs", new JSONObject().put("type", "integer"));
+        props.put("x", new JSONObject().put("type", "number"));
+        props.put("y", new JSONObject().put("type", "number"));
+        props.put("level", new JSONObject().put("type", "integer"));
+        action.put("type", "object").put("properties", props).put("required", new JSONArray(new String[]{"type"}));
         JSONObject schema = new JSONObject().put("type", "object");
-        JSONObject rootProps = new JSONObject(); rootProps.put("speak", new JSONObject().put("type", "string")); rootProps.put("confirm", new JSONObject().put("type", "boolean")); rootProps.put("done", new JSONObject().put("type", "boolean")); rootProps.put("actions", new JSONObject().put("type", "array").put("items", action));
-        schema.put("properties", rootProps).put("required", new JSONArray(new String[]{"speak","confirm","done","actions"})).put("additionalProperties", false);
+        JSONObject rootProps = new JSONObject();
+        rootProps.put("speak", new JSONObject().put("type", "string"));
+        rootProps.put("confirm", new JSONObject().put("type", "boolean"));
+        rootProps.put("done", new JSONObject().put("type", "boolean"));
+        rootProps.put("actions", new JSONObject().put("type", "array").put("items", action));
+        schema.put("properties", rootProps).put("required", new JSONArray(new String[]{"speak","confirm","done","actions"}));
         return schema;
     }
     private String extractText(JSONObject root) { JSONArray candidates = root.optJSONArray("candidates"); if (candidates == null) return null; for (int i=0;i<candidates.length();i++){JSONObject c=candidates.optJSONObject(i);if(c==null)continue;JSONObject content=c.optJSONObject("content");if(content==null)continue;JSONArray parts=content.optJSONArray("parts");if(parts==null)continue;StringBuilder out=new StringBuilder();for(int j=0;j<parts.length();j++){JSONObject p=parts.optJSONObject(j);if(p!=null){String text=p.optString("text","");if(!text.isEmpty())out.append(text);}}if(out.length()>0)return out.toString();}return null; }
