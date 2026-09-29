@@ -31,21 +31,92 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         android.widget.FrameLayout root=new android.widget.FrameLayout(this);
         root.setBackgroundColor(Color.rgb(1,5,16));
 
-        android.widget.ImageView master=new android.widget.ImageView(this);
-        master.setScaleType(android.widget.ImageView.ScaleType.FIT_XY);
-        master.setImageBitmap(loadExactMaster());
-        root.addView(master,new android.widget.FrameLayout.LayoutParams(-1,-1));
-
+        // The hologram renderer contains the verified master image internally.
+        // Do not depend on the previously corrupted external base64 asset.
         hologram=new IMOHologramView(this);
-        hologram.setVisibility(android.view.View.GONE);
+        hologram.setVisibility(android.view.View.VISIBLE);
+        android.widget.FrameLayout.LayoutParams hp=new android.widget.FrameLayout.LayoutParams(-1,0);
+        hp.gravity=android.view.Gravity.TOP;
+        hp.height=(int)(getResources().getDisplayMetrics().heightPixels*0.69f);
+        hp.topMargin=(int)(getResources().getDisplayMetrics().heightPixels*0.075f);
+        root.addView(hologram,hp);
+
+        LinearLayout overlay=new LinearLayout(this);
+        overlay.setOrientation(LinearLayout.VERTICAL);
+        overlay.setGravity(Gravity.CENTER_HORIZONTAL);
+        overlay.setPadding(16,10,16,8);
+        root.addView(overlay,new android.widget.FrameLayout.LayoutParams(-1,-1));
+
+        TextView title=new TextView(this);
+        title.setText("IMO");
+        title.setTextColor(Color.rgb(170,245,255));
+        title.setTextSize(34);
+        title.setGravity(Gravity.CENTER);
+        title.setTypeface(android.graphics.Typeface.DEFAULT,android.graphics.Typeface.BOLD);
+        LinearLayout.LayoutParams tp=new LinearLayout.LayoutParams(-1,72);
+        tp.gravity=Gravity.CENTER_HORIZONTAL;
+        overlay.addView(title,tp);
+
+        Button menu=new Button(this);
+        menu.setText("⋮");
+        menu.setTextColor(Color.rgb(170,245,255));
+        menu.setTextSize(27);
+        menu.setPadding(0,0,0,5);
+        menu.setBackground(roundBg(Color.TRANSPARENT,Color.rgb(25,150,220)));
+        android.widget.FrameLayout.LayoutParams mp=new android.widget.FrameLayout.LayoutParams(64,64,Gravity.TOP|Gravity.RIGHT);
+        mp.topMargin=8; mp.rightMargin=10;
+        root.addView(menu,mp);
+        menu.setOnClickListener(v->showMainMenu());
+
+        Space spacer=new Space(this);
+        overlay.addView(spacer,new LinearLayout.LayoutParams(1,0,1f));
+
         status=hiddenText(); chat=hiddenText(); voiceStatus=hiddenText(); aiStatus=hiddenText();
         mic=new Button(this); conversationButton=new Button(this); enrollButton=new Button(this);
 
-        addHit(root,new android.view.View(this),0.86f,0.00f,0.14f,0.075f,v->showMainMenu());
-        addHit(root,new android.view.View(this),0.045f,0.755f,0.91f,0.085f,v->listen());
-        addHit(root,new android.view.View(this),0.045f,0.845f,0.91f,0.075f,v->toggleConversation());
-        addHit(root,new android.view.View(this),0.045f,0.918f,0.91f,0.075f,v->listen());
+        LinearLayout info=new LinearLayout(this);
+        info.setOrientation(LinearLayout.VERTICAL);
+        info.setGravity(Gravity.CENTER_HORIZONTAL);
 
+        TextView online=new TextView(this);
+        online.setText("●  IMO • ONLINE");
+        online.setTextColor(Color.rgb(150,245,255));
+        online.setTextSize(21);
+        online.setGravity(Gravity.CENTER);
+        online.setTypeface(android.graphics.Typeface.DEFAULT,android.graphics.Typeface.BOLD);
+        online.setBackground(roundBg(Color.rgb(5,30,55),Color.rgb(30,185,235)));
+        info.addView(online,new LinearLayout.LayoutParams(235,52));
+
+        TextView sub=new TextView(this);
+        sub.setText("N E U R A L   H O L O G R A P H I C   I N T E R F A C E");
+        sub.setTextColor(Color.rgb(110,180,220));
+        sub.setTextSize(12);
+        sub.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-1,38);
+        sp.topMargin=4;
+        info.addView(sub,sp);
+
+        TextView ready=new TextView(this);
+        ready.setText("Siap. Saya menunggu perintah.");
+        ready.setTextColor(Color.WHITE);
+        ready.setTextSize(19);
+        ready.setGravity(Gravity.CENTER);
+        info.addView(ready,new LinearLayout.LayoutParams(-1,42));
+
+        styleButton(mic,"🎙   BICARA DENGAN IMO");
+        styleButton(conversationButton,"🗣   MODE DIALOG");
+        Button quick=new Button(this);
+        styleButton(quick,"⚡   PERINTAH CEPAT");
+        LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(-1,58);
+        bp.setMargins(0,4,0,0);
+        info.addView(mic,bp);
+        info.addView(conversationButton,new LinearLayout.LayoutParams(-1,58));
+        info.addView(quick,new LinearLayout.LayoutParams(-1,58));
+        mic.setOnClickListener(v->listen());
+        conversationButton.setOnClickListener(v->toggleConversation());
+        quick.setOnClickListener(v->listen());
+
+        overlay.addView(info,new LinearLayout.LayoutParams(-1,-2));
         setContentView(root);
     }
     private void addHit(android.widget.FrameLayout root,android.view.View hit,float x,float y,float w,float h,android.view.View.OnClickListener click){
