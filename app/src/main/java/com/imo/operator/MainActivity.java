@@ -29,7 +29,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(22,18,22,18);root.setBackgroundColor(Color.rgb(2,4,15));
         LinearLayout top=new LinearLayout(this);top.setGravity(Gravity.CENTER_VERTICAL);
         TextView title=new TextView(this);title.setText("IMO");title.setTextColor(Color.rgb(170,245,255));title.setTextSize(30);title.setGravity(Gravity.CENTER);top.addView(title,new LinearLayout.LayoutParams(0,58,1));
-        Button menu=new Button(this);menu.setText("☰");menu.setTextColor(Color.WHITE);menu.setTextSize(20);menu.setBackground(roundBg(Color.rgb(15,28,55),Color.rgb(65,205,255)));menu.setOnClickListener(v->showMainMenu());top.addView(menu,new LinearLayout.LayoutParams(58,58));root.addView(top);
+        Button menu=new Button(this);menu.setText("⋮");menu.setTextColor(Color.rgb(170,245,255));menu.setTextSize(28);menu.setBackground(roundBg(Color.rgb(15,28,55),Color.rgb(65,205,255)));menu.setOnClickListener(v->showMainMenu());top.addView(menu,new LinearLayout.LayoutParams(58,58));root.addView(top);
         hologram=new IMOHologramView(this);root.addView(hologram,new LinearLayout.LayoutParams(-1,0,1.0f));
         status=new TextView(this);status.setText("Siap. Saya menunggu perintah.");status.setTextColor(Color.rgb(205,230,245));status.setTextSize(15);status.setGravity(Gravity.CENTER);status.setPadding(0,5,0,5);root.addView(status);
         chat=new TextView(this);chat.setText("IMO: Siap membantu.");chat.setTextColor(Color.WHITE);chat.setTextSize(16);chat.setGravity(Gravity.CENTER);chat.setPadding(12,8,12,8);root.addView(chat);
