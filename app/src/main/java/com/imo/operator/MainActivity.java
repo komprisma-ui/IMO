@@ -28,9 +28,6 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         getWindow().setStatusBarColor(Color.rgb(1,4,12));
         getWindow().setNavigationBarColor(Color.rgb(1,4,12));
 
-        // The supplied master screenshot is the visual source of truth.
-        // Runtime controls are transparent hit areas placed above it, so the
-        // interface remains visually identical while retaining functionality.
         android.widget.FrameLayout root=new android.widget.FrameLayout(this);
         root.setBackgroundColor(Color.rgb(1,5,16));
 
@@ -39,34 +36,52 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         master.setImageBitmap(loadExactMaster());
         root.addView(master,new android.widget.FrameLayout.LayoutParams(-1,-1));
 
-        // Runtime state holders remain available to the existing voice/AI code
-        // but are intentionally hidden because the master image already contains
-        // the exact typography and controls requested.
         hologram=new IMOHologramView(this);
         hologram.setVisibility(android.view.View.GONE);
-        status=hiddenText();
-        chat=hiddenText();
-        voiceStatus=hiddenText();
-        aiStatus=hiddenText();
-        mic=new Button(this);
-        conversationButton=new Button(this);
-        enrollButton=new Button(this);
+        status=hiddenText(); chat=hiddenText(); voiceStatus=hiddenText(); aiStatus=hiddenText();
+        mic=new Button(this); conversationButton=new Button(this); enrollButton=new Button(this);
 
-        android.view.View menuHit=new android.view.View(this);
-        android.view.View micHit=new android.view.View(this);
-        android.view.View dialogHit=new android.view.View(this);
-        android.view.View quickHit=new android.view.View(this);
-        menuHit.setOnClickListener(v->showMainMenu());
-        micHit.setOnClickListener(v->listen());
-        dialogHit.setOnClickListener(v->toggleConversation());
-        quickHit.setOnClickListener(v->listen());
-
-        root.addView(menuHit,hitParams(0.86f,0.00f,0.14f,0.075f));
-        root.addView(micHit,hitParams(0.045f,0.755f,0.91f,0.085f));
-        root.addView(dialogHit,hitParams(0.045f,0.845f,0.91f,0.075f));
-        root.addView(quickHit,hitParams(0.045f,0.918f,0.91f,0.075f));
+        addHit(root,new android.view.View(this),0.86f,0.00f,0.14f,0.075f,v->showMainMenu());
+        addHit(root,new android.view.View(this),0.045f,0.755f,0.91f,0.085f,v->listen());
+        addHit(root,new android.view.View(this),0.045f,0.845f,0.91f,0.075f,v->toggleConversation());
+        addHit(root,new android.view.View(this),0.045f,0.918f,0.91f,0.075f,v->listen());
 
         setContentView(root);
+    }
+    private void addHit(android.widget.FrameLayout root,android.view.View hit,float x,float y,float w,float h,android.view.View.OnClickListener click){
+        hit.setBackgroundColor(Color.TRANSPARENT);
+        hit.setOnClickListener(click);
+        root.addView(hit,new android.widget.FrameLayout.LayoutParams(1,1));
+        root.post(()->{
+            int rw=root.getWidth(), rh=root.getHeight();
+            android.widget.FrameLayout.LayoutParams lp=(android.widget.FrameLayout.LayoutParams)hit.getLayoutParams();
+            lp.width=Math.max(1,(int)(rw*w));
+            lp.height=Math.max(1,(int)(rh*h));
+            lp.leftMargin=(int)(rw*x);
+            lp.topMargin=(int)(rh*y);
+            hit.setLayoutParams(lp);
+        });
+    }
+    private TextView hiddenText(){TextView t=new TextView(this);t.setVisibility(android.view.View.GONE);return t;}
+    private android.graphics.Bitmap loadExactMaster(){
+        try{
+            StringBuilder b=new StringBuilder();
+            int[] ids={R.raw.imo_master_00,R.raw.imo_master_01,R.raw.imo_master_02,R.raw.imo_master_03,R.raw.imo_master_04,R.raw.imo_master_05,R.raw.imo_master_06};
+            for(int id:ids){
+                java.io.InputStream in=getResources().openRawResource(id);
+                java.io.ByteArrayOutputStream out=new java.io.ByteArrayOutputStream();
+                byte[] buf=new byte[4096]; int n;
+                while((n=in.read(buf))>0)out.write(buf,0,n);
+                in.close();
+                b.append(new String(out.toByteArray(),java.nio.charset.StandardCharsets.US_ASCII));
+            }
+            byte[] image=android.util.Base64.decode(b.toString(),android.util.Base64.DEFAULT);
+            android.graphics.Bitmap bitmap=android.graphics.BitmapFactory.decodeByteArray(image,0,image.length);
+            if(bitmap==null)throw new IllegalStateException("master bitmap decode failed");
+            return bitmap;
+        }catch(Exception e){
+            return android.graphics.Bitmap.createBitmap(2,2,android.graphics.Bitmap.Config.ARGB_8888);
+        }
     }
     private TextView hiddenText(){TextView t=new TextView(this);t.setVisibility(android.view.View.GONE);return t;}
     private android.widget.FrameLayout.LayoutParams hitParams(float x,float y,float w,float h){
