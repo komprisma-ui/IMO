@@ -66,7 +66,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
     private android.graphics.Bitmap loadExactMaster(){
         try{
             StringBuilder b=new StringBuilder();
-            int[] ids={R.raw.imo_master_00,R.raw.imo_master_01,R.raw.imo_master_02,R.raw.imo_master_03,R.raw.imo_master_04,R.raw.imo_master_05,R.raw.imo_master_06};
+            int[] ids={R.raw.imo_master_a,R.raw.imo_master_b};
             for(int id:ids){
                 java.io.InputStream in=getResources().openRawResource(id);
                 java.io.ByteArrayOutputStream out=new java.io.ByteArrayOutputStream();
