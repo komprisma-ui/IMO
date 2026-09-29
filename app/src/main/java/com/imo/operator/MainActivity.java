@@ -83,39 +83,6 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
             return android.graphics.Bitmap.createBitmap(2,2,android.graphics.Bitmap.Config.ARGB_8888);
         }
     }
-    private TextView hiddenText(){TextView t=new TextView(this);t.setVisibility(android.view.View.GONE);return t;}
-    private android.widget.FrameLayout.LayoutParams hitParams(float x,float y,float w,float h){
-        android.widget.FrameLayout.LayoutParams lp=new android.widget.FrameLayout.LayoutParams(1,1);
-        final android.widget.FrameLayout.LayoutParams out=lp;
-        out.leftMargin=0; out.topMargin=0;
-        getWindow().getDecorView().post(()->{
-            android.view.View parent=(android.view.View)out.getClass();
-        });
-        // Temporary percentages are converted by the root's layout listener below.
-        out.width=Math.max(1,(int)(getResources().getDisplayMetrics().widthPixels*w));
-        out.height=Math.max(1,(int)(getResources().getDisplayMetrics().heightPixels*h));
-        out.leftMargin=(int)(getResources().getDisplayMetrics().widthPixels*x);
-        out.topMargin=(int)(getResources().getDisplayMetrics().heightPixels*y);
-        return out;
-    }
-    private Bitmap loadExactMaster(){
-        try{
-            StringBuilder b=new StringBuilder();
-            int[] ids={R.raw.imo_master_00,R.raw.imo_master_01,R.raw.imo_master_02,R.raw.imo_master_03,R.raw.imo_master_04,R.raw.imo_master_05,R.raw.imo_master_06};
-            for(int id:ids){
-                java.io.InputStream in=getResources().openRawResource(id);
-                java.io.ByteArrayOutputStream out=new java.io.ByteArrayOutputStream();
-                byte[] buf=new byte[4096]; int n;
-                while((n=in.read(buf))>0)out.write(buf,0,n);
-                in.close();
-                b.append(new String(out.toByteArray(),java.nio.charset.StandardCharsets.US_ASCII));
-            }
-            byte[] image=android.util.Base64.decode(b.toString(),android.util.Base64.DEFAULT);
-            return android.graphics.BitmapFactory.decodeByteArray(image,0,image.length);
-        }catch(Exception e){
-            return android.graphics.Bitmap.createBitmap(2,2,android.graphics.Bitmap.Config.ARGB_8888);
-        }
-    }
     private GradientDrawable roundBg(int fill,int strokeColor){GradientDrawable g=new GradientDrawable();g.setColor(fill);g.setCornerRadius(28);g.setStroke(2,strokeColor);return g;}
     private void styleButton(Button b,String label){b.setText(label);b.setTextColor(Color.WHITE);b.setTextSize(14);b.setAllCaps(false);b.setPadding(12,4,12,4);b.setBackground(roundBg(Color.rgb(12,25,48),Color.rgb(45,150,205)));}
     private void showMainMenu(){
