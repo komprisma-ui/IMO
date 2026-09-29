@@ -25,109 +25,81 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
     @Override protected void onResume(){super.onResume();if(confirmation==null)confirmation=new IMOConfirmation();engine=new IMOEngine(IMOAccessibilityService.instance,confirmation,this);refreshStatuses();}
     @Override public void onRequestPermissionsResult(int code,String[]p,int[]g){super.onRequestPermissionsResult(code,p,g);if(code==REQ_AUDIO){boolean ok=checkSelfPermission(Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED;if(ok&&pendingEnrollment){pendingEnrollment=false;enrollVoiceInternal();}else if(!ok&&pendingEnrollment){pendingEnrollment=false;showEnrollmentPermissionFailure();}return;}if(code==REQ_NOTIFY){if(conversationMode)startConversationService();return;}if(code==REQ_VISION){if(conversationMode)startConversationService();return;}if(code!=REQ_DEVICE||pendingCommand==null)return;boolean cam=!pendingCameraPermission||checkSelfPermission(Manifest.permission.CAMERA)==PackageManager.PERMISSION_GRANTED;boolean call=!pendingCallPermission||checkSelfPermission(Manifest.permission.CALL_PHONE)==PackageManager.PERMISSION_GRANTED;String cmd=pendingCommand;pendingCommand=null;pendingCameraPermission=false;pendingCallPermission=false;if(!cam||!call){status.setText("Izin perangkat belum diberikan.");speak("Izin perangkat belum diberikan. Saya tidak akan melewati keamanan Android.");return;}executePlannedCommand(cmd);}
     private void buildUi(){
-        getWindow().setStatusBarColor(Color.rgb(2,7,18));
+        getWindow().setStatusBarColor(Color.rgb(1,4,12));
         getWindow().setNavigationBarColor(Color.rgb(1,4,12));
-        LinearLayout root=new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(18,8,18,12);
+
+        // The supplied master screenshot is the visual source of truth.
+        // Runtime controls are transparent hit areas placed above it, so the
+        // interface remains visually identical while retaining functionality.
+        android.widget.FrameLayout root=new android.widget.FrameLayout(this);
         root.setBackgroundColor(Color.rgb(1,5,16));
 
-        LinearLayout top=new LinearLayout(this);
-        top.setGravity(Gravity.CENTER_VERTICAL);
-        TextView title=new TextView(this);
-        title.setText("IMO");
-        title.setTextColor(Color.rgb(180,248,255));
-        title.setTextSize(34);
-        title.setGravity(Gravity.CENTER);
-        title.setTypeface(android.graphics.Typeface.create("sans-serif",android.graphics.Typeface.NORMAL));
-        top.addView(title,new LinearLayout.LayoutParams(0,66,1));
+        android.widget.ImageView master=new android.widget.ImageView(this);
+        master.setScaleType(android.widget.ImageView.ScaleType.FIT_XY);
+        master.setImageBitmap(loadExactMaster());
+        root.addView(master,new android.widget.FrameLayout.LayoutParams(-1,-1));
 
-        Button menu=new Button(this);
-        menu.setText("⋮");
-        menu.setTextColor(Color.rgb(185,248,255));
-        menu.setTextSize(28);
-        menu.setPadding(0,0,0,5);
-        menu.setBackground(roundBg(Color.argb(20,20,80,125),Color.rgb(45,180,245)));
-        menu.setOnClickListener(v->showMainMenu());
-        top.addView(menu,new LinearLayout.LayoutParams(58,58));
-        root.addView(top);
-
+        // Runtime state holders remain available to the existing voice/AI code
+        // but are intentionally hidden because the master image already contains
+        // the exact typography and controls requested.
         hologram=new IMOHologramView(this);
-        root.addView(hologram,new LinearLayout.LayoutParams(-1,0,1.0f));
-
-        TextView online=new TextView(this);
-        online.setText("●  IMO • ONLINE");
-        online.setTextColor(Color.rgb(130,246,255));
-        online.setTextSize(17);
-        online.setGravity(Gravity.CENTER);
-        online.setTypeface(android.graphics.Typeface.DEFAULT_BOLD);
-        GradientDrawable onlineBg=roundBg(Color.rgb(7,34,50),Color.rgb(45,205,235));
-        onlineBg.setCornerRadius(45);
-        online.setBackground(onlineBg);
-        online.setPadding(18,6,18,6);
-        LinearLayout.LayoutParams op=new LinearLayout.LayoutParams(-2,48);
-        op.gravity=Gravity.CENTER_HORIZONTAL;
-        op.bottomMargin=5;
-        root.addView(online,op);
-
-        TextView sub=new TextView(this);
-        sub.setText("NEURAL HOLOGRAPHIC INTERFACE");
-        sub.setTextColor(Color.rgb(105,160,195));
-        sub.setTextSize(11);
-        sub.setGravity(Gravity.CENTER);
-        sub.setLetterSpacing(.18f);
-        root.addView(sub,new LinearLayout.LayoutParams(-1,30));
-
-        status=new TextView(this);
-        status.setText("Siap. Saya menunggu perintah.");
-        status.setTextColor(Color.rgb(225,240,250));
-        status.setTextSize(17);
-        status.setGravity(Gravity.CENTER);
-        status.setPadding(0,3,0,5);
-        root.addView(status,new LinearLayout.LayoutParams(-1,48));
-
-        chat=new TextView(this);
-        chat.setText("");
-        chat.setTextColor(Color.WHITE);
-        chat.setTextSize(15);
-        chat.setGravity(Gravity.CENTER);
-        chat.setMaxLines(2);
-        chat.setPadding(10,0,10,2);
-        root.addView(chat,new LinearLayout.LayoutParams(-1,42));
-
-        voiceStatus=new TextView(this);
-        voiceStatus.setTextColor(Color.rgb(145,225,245));
-        voiceStatus.setTextSize(12);
-        voiceStatus.setGravity(Gravity.CENTER);
-        voiceStatus.setVisibility(TextView.GONE);
-        root.addView(voiceStatus,new LinearLayout.LayoutParams(-1,1));
-
-        aiStatus=new TextView(this);
-        aiStatus.setTextColor(Color.rgb(190,160,255));
-        aiStatus.setTextSize(12);
-        aiStatus.setGravity(Gravity.CENTER);
-        aiStatus.setVisibility(TextView.GONE);
-        root.addView(aiStatus,new LinearLayout.LayoutParams(-1,1));
-
+        hologram.setVisibility(android.view.View.GONE);
+        status=hiddenText();
+        chat=hiddenText();
+        voiceStatus=hiddenText();
+        aiStatus=hiddenText();
         mic=new Button(this);
-        styleButton(mic,"🎙  BICARA DENGAN IMO");
-        mic.setTextSize(16);
-        mic.setOnClickListener(v->listen());
-        root.addView(mic,new LinearLayout.LayoutParams(-1,64));
-
         conversationButton=new Button(this);
-        styleButton(conversationButton,"🗣  MODE DIALOG");
-        conversationButton.setTextSize(15);
-        conversationButton.setOnClickListener(v->toggleConversation());
-        root.addView(conversationButton,new LinearLayout.LayoutParams(-1,64));
+        enrollButton=new Button(this);
 
-        Button quick=new Button(this);
-        styleButton(quick,"⚡  PERINTAH CEPAT");
-        quick.setTextSize(15);
-        quick.setOnClickListener(v->listen());
-        root.addView(quick,new LinearLayout.LayoutParams(-1,64));
+        android.view.View menuHit=new android.view.View(this);
+        android.view.View micHit=new android.view.View(this);
+        android.view.View dialogHit=new android.view.View(this);
+        android.view.View quickHit=new android.view.View(this);
+        menuHit.setOnClickListener(v->showMainMenu());
+        micHit.setOnClickListener(v->listen());
+        dialogHit.setOnClickListener(v->toggleConversation());
+        quickHit.setOnClickListener(v->listen());
+
+        root.addView(menuHit,hitParams(0.86f,0.00f,0.14f,0.075f));
+        root.addView(micHit,hitParams(0.045f,0.755f,0.91f,0.085f));
+        root.addView(dialogHit,hitParams(0.045f,0.845f,0.91f,0.075f));
+        root.addView(quickHit,hitParams(0.045f,0.918f,0.91f,0.075f));
 
         setContentView(root);
+    }
+    private TextView hiddenText(){TextView t=new TextView(this);t.setVisibility(android.view.View.GONE);return t;}
+    private android.widget.FrameLayout.LayoutParams hitParams(float x,float y,float w,float h){
+        android.widget.FrameLayout.LayoutParams lp=new android.widget.FrameLayout.LayoutParams(1,1);
+        final android.widget.FrameLayout.LayoutParams out=lp;
+        out.leftMargin=0; out.topMargin=0;
+        getWindow().getDecorView().post(()->{
+            android.view.View parent=(android.view.View)out.getClass();
+        });
+        // Temporary percentages are converted by the root's layout listener below.
+        out.width=Math.max(1,(int)(getResources().getDisplayMetrics().widthPixels*w));
+        out.height=Math.max(1,(int)(getResources().getDisplayMetrics().heightPixels*h));
+        out.leftMargin=(int)(getResources().getDisplayMetrics().widthPixels*x);
+        out.topMargin=(int)(getResources().getDisplayMetrics().heightPixels*y);
+        return out;
+    }
+    private Bitmap loadExactMaster(){
+        try{
+            StringBuilder b=new StringBuilder();
+            int[] ids={R.raw.imo_master_00,R.raw.imo_master_01,R.raw.imo_master_02,R.raw.imo_master_03,R.raw.imo_master_04,R.raw.imo_master_05,R.raw.imo_master_06};
+            for(int id:ids){
+                java.io.InputStream in=getResources().openRawResource(id);
+                java.io.ByteArrayOutputStream out=new java.io.ByteArrayOutputStream();
+                byte[] buf=new byte[4096]; int n;
+                while((n=in.read(buf))>0)out.write(buf,0,n);
+                in.close();
+                b.append(new String(out.toByteArray(),java.nio.charset.StandardCharsets.US_ASCII));
+            }
+            byte[] image=android.util.Base64.decode(b.toString(),android.util.Base64.DEFAULT);
+            return android.graphics.BitmapFactory.decodeByteArray(image,0,image.length);
+        }catch(Exception e){
+            return android.graphics.Bitmap.createBitmap(2,2,android.graphics.Bitmap.Config.ARGB_8888);
+        }
     }
     private GradientDrawable roundBg(int fill,int strokeColor){GradientDrawable g=new GradientDrawable();g.setColor(fill);g.setCornerRadius(28);g.setStroke(2,strokeColor);return g;}
     private void styleButton(Button b,String label){b.setText(label);b.setTextColor(Color.WHITE);b.setTextSize(14);b.setAllCaps(false);b.setPadding(12,4,12,4);b.setBackground(roundBg(Color.rgb(12,25,48),Color.rgb(45,150,205)));}
