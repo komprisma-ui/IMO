@@ -68,7 +68,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         root.addView(menu,mp);
         menu.setOnClickListener(v->showMainMenu());
 
-        Space spacer=new Space(this);
+        android.widget.Space spacer=new android.widget.Space(this);
         overlay.addView(spacer,new LinearLayout.LayoutParams(1,0,1f));
 
         status=hiddenText(); chat=hiddenText(); voiceStatus=hiddenText(); aiStatus=hiddenText();
