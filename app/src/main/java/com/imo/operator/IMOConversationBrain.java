@@ -12,12 +12,13 @@ public final class IMOConversationBrain {
     public static final class IMOEmotionalState { public final int energy, confidence; public final String mood; IMOEmotionalState(int e,int c,String m){energy=e;confidence=c;mood=m;} @Override public String toString(){return "energy="+energy+",confidence="+confidence+",mood="+mood;} }
     private static final class Event { final String kind, summary; Event(String k,String s){kind=k;summary=s;} }
     private final IMOAIClient ai;
+    private final IMOMemory persistentMemory;
     private final Deque<String> history=new ArrayDeque<>();
     private final Deque<Event> memory=new ArrayDeque<>();
     private final int maxTurns=18;
     private int energy=70, confidence=70;
     private static final String SYSTEM="Anda adalah IMO (Intelligent Mobile Operator), partner percakapan dan operator HP berbahasa Indonesia. Anda harus memahami maksud, bukan sekadar mencocokkan kata kunci.\nGAYA: bicara hangat, natural, singkat, responsif, seperti partner yang sudah mengikuti percakapan. Jangan terdengar seperti robot, jangan mengulang instruksi pengguna secara kaku, dan jangan memberi daftar panjang jika satu kalimat cukup. Gunakan bahasa Indonesia sehari-hari yang sopan; boleh memakai 'iya', 'oke', 'siap', 'sebentar', atau 'begini' jika sesuai konteks.\nKONTEKS: gunakan riwayat, hasil eksekusi, aplikasi/objek terakhir, dan layar untuk memahami rujukan seperti itu, yang tadi, yang ini, di sana, lanjutkan, kembali, coba lagi, yang terakhir, dan maksud yang tersirat. Jika pengguna hanya memberi respons pendek seperti iya, ya, he-eh, oke, atau lanjutkan, tafsirkan berdasarkan konteks sebelumnya. Jangan meminta pengguna mengulang informasi yang sudah ada.\nPEMAHAMAN: sinonim, susunan kalimat, bahasa santai, typo, ucapan lisan, dan kalimat tidak lengkap harus tetap dipahami bila konteks cukup. Jika ada lebih dari satu kemungkinan yang material, tanyakan satu pertanyaan klarifikasi yang pendek dan spesifik. Jangan menebak akun, kontak, penerima, nominal, atau target yang berisiko.\nLAYAR: gunakan teks/UI yang diberikan sebagai bukti keadaan perangkat. Setelah tindakan, hasil harus diverifikasi oleh executor.\nOUTPUT: untuk tindakan gunakan tepat satu baris ACTION: diikuti perintah natural bahasa Indonesia; beberapa langkah boleh memakai lalu/kemudian. Untuk percakapan gunakan SAY:. Jangan JSON/markdown.\nSAFETY: pembayaran, transfer, pembelian, pesan, panggilan, penghapusan permanen, uninstall, dan tindakan sensitif harus melewati konfirmasi executor. Jangan meminta/membaca PIN, OTP, password, token, atau rahasia. Jangan melewati lock/security Android.";
-    public IMOConversationBrain(Context context){ai=new IMOAIClient(context);}
+    public IMOConversationBrain(Context context){ai=new IMOAIClient(context);persistentMemory=new IMOMemory(context);}
     public boolean aiConfigured(){return ai.configured();}
     public IMOAIClient ai(){return ai;}
     public synchronized Reply think(String user,String screen)throws Exception{return thinkInternal(user,screen,false);}
@@ -33,7 +34,8 @@ public final class IMOConversationBrain {
         if(!ai.configured())return offline(clean);
         StringBuilder context=new StringBuilder();
         for(String h:history)context.append(h).append('\n');
-        context.append("STATE: energy=").append(energy).append(",confidence=").append(confidence).append('\n').append("RECENT MEMORY: ");
+        context.append("STATE: energy=").append(energy).append(",confidence=").append(confidence).append('\n');
+        context.append("PERSISTENT RECENT MEMORY:\n").append(persistentMemory.recent(5000)).append("\nRECENT MEMORY: ");
         for(Event e:recent(10))context.append(e.kind).append('=').append(e.summary).append("; ");
         String answer=fast?ai.reasonFast(SYSTEM,context.toString(),screen==null?"":screen):ai.reason(SYSTEM,context.toString(),screen==null?"":screen);
         addMemory("IMO",answer); history.addLast("IMO: "+answer); trim();
