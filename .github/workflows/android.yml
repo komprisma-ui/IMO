@@ -2,7 +2,7 @@ name: IMO Android Build
 
 on:
   push:
-    branches: [ main, feature/natural-luna-final8 ]
+    branches: [ main, feature/natural-luna-final8, ci/imo-hologram-final ]
   pull_request:
   workflow_dispatch:
 
