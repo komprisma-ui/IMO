@@ -125,11 +125,11 @@ public final class IMOHologramView extends View {
 
         // Very small breathing/parallax keeps the face recognisable instead
         // of visibly jumping around.
-        float breathe = 1f + .009f * (float)Math.sin(t * 1.55f);
+        float breathe = 1f + .014f * (float)Math.sin(t * 1.55f);
         bw *= breathe;
         bh *= breathe;
 
-        float drift = (float)Math.sin(t * .85f) * 3.5f;
+        float drift = (float)Math.sin(t * .85f) * 5.0f;
         float top = Math.max(0, h * .018f) + (float)Math.sin(t * 1.1f) * 2.2f;
         return new RectF((w - bw) * .5f + drift, top,
                 (w + bw) * .5f + drift, top + bh);
@@ -148,7 +148,7 @@ public final class IMOHologramView extends View {
 
         // Cyan ghosting. The offsets are intentionally small so the face
         // remains sharp while visibly behaving like a projection.
-        float ghost = (float)Math.sin(t * 6.2f) * 2.8f;
+        float ghost = (float)Math.sin(t * 7.5f) * 4.8f;
         imagePaint.setAlpha(42);
         c.drawBitmap(master, null,
                 new RectF(dst.left - ghost, dst.top, dst.right - ghost, dst.bottom), imagePaint);
@@ -164,8 +164,8 @@ public final class IMOHologramView extends View {
         for (int i = 0; i < slices; i++) {
             float f0 = (float)i / slices;
             float f1 = (float)(i + 1) / slices;
-            float waveAmp = speaking ? 4.4f : (listening ? 3.8f : 2.7f);
-            float wave = (float)Math.sin(t * 4.2f + f0 * 19f) * waveAmp;
+            float waveAmp = speaking ? 9.0f : (listening ? 8.0f : 6.5f);
+            float wave = (float)Math.sin(t * 5.0f + f0 * 22f) * waveAmp + (float)Math.sin(t * 11.0f + i * 1.7f) * 0.8f;
             float shimmer = (float)Math.sin(t * 9f + i * .8f) * .7f;
             float top = dst.top + i * sliceH;
             float bottom = (i == slices - 1) ? dst.bottom : top + sliceH + .45f;
@@ -244,9 +244,9 @@ public final class IMOHologramView extends View {
     private void drawScan(Canvas c, float w, float h, float t) {
         float y = (h * .08f + (t * 90f) % (h * .72f));
         fxPaint.setStyle(Paint.Style.FILL);
-        fxPaint.setColor(Color.argb(28, 100, 235, 255));
+        fxPaint.setColor(Color.argb(42, 100, 235, 255));
         c.drawRect(w * .04f, y, w * .96f, y + 3f, fxPaint);
-        fxPaint.setColor(Color.argb(9, 80, 210, 255));
+        fxPaint.setColor(Color.argb(14, 80, 210, 255));
         int phase = (int)(t * 18f) % 6;
         for (float yy = phase; yy < h * .76f; yy += 6f) {
             c.drawRect(w * .07f, yy, w * .93f, yy + 1f, fxPaint);
