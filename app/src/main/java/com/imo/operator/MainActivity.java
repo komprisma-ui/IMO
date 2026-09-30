@@ -37,7 +37,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         hologram.setVisibility(android.view.View.VISIBLE);
         android.widget.FrameLayout.LayoutParams hp=new android.widget.FrameLayout.LayoutParams(-1,0);
         hp.gravity=android.view.Gravity.TOP;
-        hp.height=(int)(getResources().getDisplayMetrics().heightPixels*0.69f);
+        hp.height=(int)(getResources().getDisplayMetrics().heightPixels*0.66f);
         hp.topMargin=(int)(getResources().getDisplayMetrics().heightPixels*0.075f);
         root.addView(hologram,hp);
 
@@ -50,7 +50,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         TextView title=new TextView(this);
         title.setText("IMO");
         title.setTextColor(Color.rgb(170,245,255));
-        title.setTextSize(34);
+        title.setTextSize(36);
         title.setGravity(Gravity.CENTER);
         title.setTypeface(android.graphics.Typeface.DEFAULT,android.graphics.Typeface.BOLD);
         LinearLayout.LayoutParams tp=new LinearLayout.LayoutParams(-1,72);
@@ -64,7 +64,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         menu.setPadding(0,0,0,5);
         menu.setBackground(roundBg(Color.TRANSPARENT,Color.rgb(25,150,220)));
         android.widget.FrameLayout.LayoutParams mp=new android.widget.FrameLayout.LayoutParams(64,64,Gravity.TOP|Gravity.RIGHT);
-        mp.topMargin=8; mp.rightMargin=10;
+        mp.topMargin=10; mp.rightMargin=12;
         root.addView(menu,mp);
         menu.setOnClickListener(v->showMainMenu());
 
@@ -81,37 +81,37 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         TextView online=new TextView(this);
         online.setText("●  IMO • ONLINE");
         online.setTextColor(Color.rgb(150,245,255));
-        online.setTextSize(21);
+        online.setTextSize(18);
         online.setGravity(Gravity.CENTER);
         online.setTypeface(android.graphics.Typeface.DEFAULT,android.graphics.Typeface.BOLD);
         online.setBackground(roundBg(Color.rgb(5,30,55),Color.rgb(30,185,235)));
-        info.addView(online,new LinearLayout.LayoutParams(235,52));
+        info.addView(online,new LinearLayout.LayoutParams(238,50));
 
         TextView sub=new TextView(this);
         sub.setText("N E U R A L   H O L O G R A P H I C   I N T E R F A C E");
         sub.setTextColor(Color.rgb(110,180,220));
-        sub.setTextSize(12);
+        sub.setTextSize(11);
         sub.setGravity(Gravity.CENTER);
-        LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-1,38);
+        LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-1,34);
         sp.topMargin=4;
         info.addView(sub,sp);
 
         TextView ready=new TextView(this);
         ready.setText("Siap. Saya menunggu perintah.");
         ready.setTextColor(Color.WHITE);
-        ready.setTextSize(19);
+        ready.setTextSize(20);
         ready.setGravity(Gravity.CENTER);
-        info.addView(ready,new LinearLayout.LayoutParams(-1,42));
+        info.addView(ready,new LinearLayout.LayoutParams(-1,46));
 
         styleButton(mic,"🎙   BICARA DENGAN IMO");
         styleButton(conversationButton,"🗣   MODE DIALOG");
         Button quick=new Button(this);
         styleButton(quick,"⚡   PERINTAH CEPAT");
-        LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(-1,58);
+        LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(-1,70);
         bp.setMargins(0,4,0,0);
         info.addView(mic,bp);
-        info.addView(conversationButton,new LinearLayout.LayoutParams(-1,58));
-        info.addView(quick,new LinearLayout.LayoutParams(-1,58));
+        info.addView(conversationButton,new LinearLayout.LayoutParams(-1,70));
+        info.addView(quick,new LinearLayout.LayoutParams(-1,70));
         mic.setOnClickListener(v->listen());
         conversationButton.setOnClickListener(v->toggleConversation());
         quick.setOnClickListener(v->listen());
@@ -155,7 +155,7 @@ public class MainActivity extends Activity implements TextToSpeech.OnInitListene
         }
     }
     private GradientDrawable roundBg(int fill,int strokeColor){GradientDrawable g=new GradientDrawable();g.setColor(fill);g.setCornerRadius(28);g.setStroke(2,strokeColor);return g;}
-    private void styleButton(Button b,String label){b.setText(label);b.setTextColor(Color.WHITE);b.setTextSize(14);b.setAllCaps(false);b.setPadding(12,4,12,4);b.setBackground(roundBg(Color.rgb(12,25,48),Color.rgb(45,150,205)));}
+    private void styleButton(Button b,String label){b.setText(label);b.setTextColor(Color.WHITE);b.setTextSize(17);b.setAllCaps(false);b.setGravity(Gravity.CENTER);b.setPadding(12,4,12,4);b.setTypeface(android.graphics.Typeface.DEFAULT,android.graphics.Typeface.BOLD);b.setBackground(roundBg(Color.rgb(8,28,60),Color.rgb(55,190,255)));}
     private void showMainMenu(){
         String[] items={"🧠  AI CERDAS","⚙  KENDALI HP / ACCESSIBILITY","🗣  MODE DIALOG","🔐  DAFTARKAN SUARA","🧠  HAPUS MEMORI PERCAKAPAN"};
         new AlertDialog.Builder(this).setTitle("IMO • CONTROL CENTER").setItems(items,(d,which)->{
