@@ -1,5 +1,5 @@
 name: IMO Android Build
-# Final hologram UI validation
+# Live hologram animation validation
 
 on:
   push:
