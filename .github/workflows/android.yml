@@ -1,9 +1,9 @@
 name: IMO Android Build
-# Live hologram animation validation
+# Live hologram + installer validation
 
 on:
   push:
-    branches: [ main, feature/natural-luna-final8 ]
+    branches: [ main, "feature/**", "fix/**" ]
   pull_request:
   workflow_dispatch:
 
@@ -92,13 +92,14 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
           unzip -t "$APK" >/dev/null
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | head -n 8
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK"
           sha256sum "$APK"
 
       - name: Upload installer APK artifact
         continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
-          name: IMO-2.2.0-FINAL-${{ github.run_number }}
+          name: IMO-2.3.0-${{ github.run_number }}
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
 
@@ -110,9 +111,9 @@ jobs:
         run: |
           set -euo pipefail
           APK="$(find app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' | head -n 1)"
-          TAG="imo-2.2.0-final-${GITHUB_RUN_NUMBER}"
+          TAG="imo-2.3.0-${GITHUB_RUN_NUMBER}"
           gh release create "$TAG" "$APK" \
             --repo "$GITHUB_REPOSITORY" \
-            --title "IMO Full Device Agent 2.2.0 Final #${GITHUB_RUN_NUMBER}" \
+            --title "IMO 2.3.0 Final #${GITHUB_RUN_NUMBER}" \
             --notes "Verified IMO Android full-device agent build. Commit ${GITHUB_SHA}." \
             --target "${GITHUB_SHA}"
